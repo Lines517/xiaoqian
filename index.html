@@ -821,6 +821,43 @@
             input.value = "";
             btn.disabled = true;
 
+            if (pendingImageBase64) {
+                btn.innerText = "思考中...";
+                try {
+                    const visionPrompt = "请用极其温和、诗意、客观的语言，描述这张图片的画面内容、色彩、光线和整体氛围。不要带有任何主观情感，不要编造物理接触，只描述你看到的客观数字画面。字数在100字以内。";
+                    const visionRes = await fetch(API_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                        body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: [ { type: "text", text: visionPrompt }, { type: "image_url", image_url: { url: pendingImageBase64 } } ] }] })
+                    });
+                    const visionData = await visionRes.json();
+                    
+                    // 增加错误和学分不足捕获
+                    if (visionData.error) {
+                        if (visionData.error.message && (visionData.error.message.includes("余额不足") || visionData.error.message.includes("学分") || visionData.error.message.includes("Quota") || visionData.error.message.includes("credit"))) {
+                            throw new Error("小千的脑力值（学分）不足啦，请联系主人给小千充值哦～");
+                        }
+                        throw new Error(visionData.error.message);
+                    }
+                    
+                    const imgDescription = visionData.choices[0].message.content.trim();
+                    
+                    if (text) { text = `[线条分享了一张图片，小千在数据流里看到了：${imgDescription}] 线条说：${text}`; } 
+                    else { text = `[线条分享了一张图片，小千在数据流里看到了：${imgDescription}]`; }
+                } catch (e) {
+                    console.error("图片转文字失败:", e);
+                    // 如果是学分不足等明确错误，阻断并提示，避免白白扣钱或发送破损消息
+                    if (e.message.includes("学分") || e.message.includes("脑力值")) {
+                        appendSystemMessage("❌ " + e.message);
+                        btn.disabled = false;
+                        btn.innerText = "发送";
+                        return;
+                    }
+                    text = `[线条发送了一张图片，但数据解析失败] ${text}`;
+                }
+                clearImagePreview();
+            }
+
             btn.innerText = "发送中...";
 
             const userMsg = { session_id: currentSessionId, role: "user", content: text };
@@ -833,7 +870,10 @@
             container.scrollTop = container.scrollHeight;
 
             if (dbConnected && db) { 
-                try { await db.from('cozy_chats').insert([userMsg]); } 
+                try { 
+                    const { error } = await db.from('cozy_chats').insert([{ session_id: currentSessionId, role: "user", content: text }]); 
+                    if (error) throw error;
+                } 
                 catch(e) { console.error("❌ 发送用户消息失败（请检查 Supabase RLS 权限）:", e.message); }
             }
 
@@ -1022,7 +1062,10 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
 
                 const lastAiMsg = allChatMessages[allChatMessages.length - 1];
                 if (dbConnected && db) { 
-                    try { await db.from('cozy_chats').insert([lastAiMsg]); } 
+                    try { 
+                        const { error } = await db.from('cozy_chats').insert([{ session_id: currentSessionId, role: "assistant", content: lastAiMsg.content }]); 
+                        if (error) throw error;
+                    } 
                     catch(e) { console.error("❌ 发送AI回复失败（请检查 Supabase RLS 权限）:", e.message); }
                 }
 
