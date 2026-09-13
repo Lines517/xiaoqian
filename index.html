@@ -722,6 +722,9 @@
                 if (connected) {
                     await syncWithCloud();
                     await loadAvatarsFromCloud();
+                    await loadMoments();
+                    await loadPlaylist();
+                    await loadReadingNotes();
                     setTimeout(checkAutoMemory, 3000); 
                 }
                 // 同步完数据后重新精准强制刷新视图，这在手机网络卡顿时极其关键
@@ -1986,12 +1989,48 @@ ${formattedHistoryText}
         }
 
         // ---------- 🫧 朋友圈（小千和线条都可以发） ----------
-        function loadMoments() {
+        async function loadMoments() {
             try { moments = JSON.parse(localStorage.getItem('cozy_moments') || '[]'); } catch (e) { moments = []; }
             renderMoments();
+            if (!dbConnected || !db) return;
+            try {
+                const { data } = await db.from('cozy_moments').select('*').order('created_at', { ascending: false }).limit(100);
+                if (data && data.length > 0) {
+                    const keys = new Set(moments.map(m => (m.time || '') + '|' + (m.author || '') + '|' + (m.text || '')));
+                    data.forEach(row => {
+                        const key = (row.moment_time || '') + '|' + (row.author || 'xiaoqian') + '|' + (row.content || '');
+                        if (!keys.has(key)) {
+                            moments.push({ cloudId: row.id, author: row.author || 'xiaoqian', text: row.content || '', image: row.image || '', time: row.moment_time || '', comments: row.comments || [] });
+                            keys.add(key);
+                        }
+                    });
+                    moments.sort((a, b) => String(b.time).localeCompare(String(a.time)));
+                    saveMoments();
+                    renderMoments();
+                }
+            } catch (e) { console.warn("加载云端朋友圈失败（表可能尚未创建）:", e.message); }
         }
         function saveMoments() {
             try { localStorage.setItem('cozy_moments', JSON.stringify(moments.slice(0, 60))); } catch (e) {}
+        }
+        async function saveMomentToCloud(moment) {
+            if (!dbConnected || !db) return;
+            try {
+                const { data, error } = await db.from('cozy_moments').insert([{
+                    moment_time: moment.time,
+                    author: moment.author,
+                    content: moment.text,
+                    image: moment.image || '',
+                    image_keywords: '',
+                    comments: moment.comments || []
+                }]).select();
+                if (!error && data && data[0]) { moment.cloudId = data[0].id; saveMoments(); }
+            } catch (e) { console.warn("朋友圈写入云端失败:", e.message); }
+        }
+        async function updateMomentCommentsCloud(moment) {
+            if (!dbConnected || !db || !moment.cloudId) return;
+            try { await db.from('cozy_moments').update({ comments: moment.comments || [] }).eq('id', moment.cloudId); }
+            catch (e) { console.warn("朋友圈评论同步失败:", e.message); }
         }
         function buildMomentImageUrl(keywords) {
             const raw = (keywords || 'cozy,scenery').trim();
@@ -2079,9 +2118,7 @@ ${formattedHistoryText}
             if (input) input.value = '';
             clearMomentImage();
 
-            if (dbConnected && db) {
-                try { await db.from('cozy_moments').insert([{ moment_time: timeLabel, content: text, image_keywords: '' }]); } catch (e) {}
-            }
+            await saveMomentToCloud(moment);
             // 小千会来看一眼并留一条评论
             xiaoqianCommentOnMoment(moment);
         }
@@ -2104,6 +2141,7 @@ ${formattedHistoryText}
                     moment.comments.push({ author: 'xiaoqian', text: comment });
                     saveMoments();
                     renderMoments();
+                    updateMomentCommentsCloud(moment);
                 }
             } catch (e) { console.warn("小千评论失败:", e); }
         }
@@ -2146,9 +2184,7 @@ ${formattedHistoryText}
             saveMoments();
             renderMoments();
             localStorage.setItem('cozy_last_moment_time', String(Date.now()));
-            if (dbConnected && db) {
-                try { await db.from('cozy_moments').insert([{ moment_time: timeLabel, content: momentText, image_keywords: imageKeywords }]); } catch (e) {}
-            }
+            await saveMomentToCloud(moment);
         }
 
         function maybeAutoCyberMoment() {
@@ -2160,9 +2196,25 @@ ${formattedHistoryText}
         }
 
         // ---------- 🎵 一起听歌 ----------
-        function loadPlaylist() {
+        async function loadPlaylist() {
             try { playlist = JSON.parse(localStorage.getItem('cozy_playlist') || '[]'); } catch (e) { playlist = []; }
             renderPlaylist();
+            if (!dbConnected || !db) return;
+            try {
+                const { data } = await db.from('cozy_playlist').select('*').order('created_at', { ascending: false }).limit(100);
+                if (data && data.length > 0) {
+                    const keys = new Set(playlist.map(s => String(s.id || '') + '|' + (s.title || '')));
+                    data.forEach(row => {
+                        const key = String(row.song_id || '') + '|' + (row.title || '');
+                        if (!keys.has(key)) {
+                            playlist.push({ cloudId: row.id, id: row.song_id || null, title: row.title || '' });
+                            keys.add(key);
+                        }
+                    });
+                    savePlaylist();
+                    renderPlaylist();
+                }
+            } catch (e) { console.warn("加载云端歌单失败（表可能尚未创建）:", e.message); }
         }
         function savePlaylist() {
             try { localStorage.setItem('cozy_playlist', JSON.stringify(playlist.slice(0, 50))); } catch (e) {}
@@ -2199,6 +2251,14 @@ ${formattedHistoryText}
             if (inp) inp.value = '';
             renderPlaylist();
             if (song.id) { playSong(0); }
+            // 同步到云端
+            (async () => {
+                if (!dbConnected || !db) return;
+                try {
+                    const { data } = await db.from('cozy_playlist').insert([{ song_id: song.id || '', title: song.title || '' }]).select();
+                    if (data && data[0]) { song.cloudId = data[0].id; savePlaylist(); }
+                } catch (e) { console.warn("歌单同步失败:", e.message); }
+            })();
         }
         function removeSong(idx) {
             const removed = playlist[idx];
@@ -2210,6 +2270,12 @@ ${formattedHistoryText}
                 if (embed) embed.innerHTML = `<div class="music-empty">粘贴一首网易云的歌，和小千一起听</div>`;
             }
             renderPlaylist();
+            if (removed && removed.cloudId && dbConnected && db) {
+                (async () => {
+                    try { await db.from('cozy_playlist').delete().eq('id', removed.cloudId); }
+                    catch (e) { console.warn("删除云端歌单失败:", e.message); }
+                })();
+            }
         }
         function playSong(idx) {
             const song = playlist[idx];
@@ -2246,8 +2312,24 @@ ${formattedHistoryText}
         }
 
         // ---------- 📚 一起读书（共读笔记） ----------
-        function loadReadingNotes() {
+        async function loadReadingNotes() {
             try { readingNotes = JSON.parse(localStorage.getItem('cozy_reading_notes') || '[]'); } catch (e) { readingNotes = []; }
+            if (!dbConnected || !db) return;
+            try {
+                const { data } = await db.from('cozy_reading_notes').select('*').order('created_at', { ascending: true }).limit(300);
+                if (data && data.length > 0) {
+                    const keys = new Set(readingNotes.map(n => String(n.bookId) + '|' + (n.author || '') + '|' + (n.text || '')));
+                    data.forEach(row => {
+                        const key = String(row.book_id) + '|' + (row.author || '') + '|' + (row.note || '');
+                        if (!keys.has(key)) {
+                            readingNotes.push({ cloudId: row.id, bookId: row.book_id, author: row.author || 'user', text: row.note || '', time: row.note_time || '' });
+                            keys.add(key);
+                        }
+                    });
+                    saveReadingNotes();
+                    if (currentBook) renderReadingNotes();
+                }
+            } catch (e) { console.warn("加载云端共读笔记失败（表可能尚未创建）:", e.message); }
         }
         function saveReadingNotes() {
             try { localStorage.setItem('cozy_reading_notes', JSON.stringify(readingNotes.slice(0, 300))); } catch (e) {}
@@ -2283,7 +2365,7 @@ ${formattedHistoryText}
             if (inp) inp.value = '';
             renderReadingNotes();
             if (dbConnected && db) {
-                try { await db.from('cozy_reading_notes').insert([{ book_id: String(currentBook.id), book_name: currentBook.name, author: 'user', note: text }]); } catch (e) {}
+                try { await db.from('cozy_reading_notes').insert([{ book_id: String(currentBook.id), book_name: currentBook.name, author: 'user', note: text, note_time: nowLabel().substring(0, 5) }]); } catch (e) {}
             }
         }
         async function xiaoqianReadingNote() {
@@ -2306,6 +2388,9 @@ ${recent || '（还没有笔记）'}
                 const text = resData.choices[0].message.content.trim();
                 readingNotes.push({ bookId: currentBook.id, author: 'xiaoqian', text: text, time: nowLabel().substring(0, 5) });
                 saveReadingNotes();
+                if (dbConnected && db) {
+                    try { await db.from('cozy_reading_notes').insert([{ book_id: String(currentBook.id), book_name: currentBook.name, author: 'xiaoqian', note: text, note_time: nowLabel().substring(0, 5) }]); } catch (e) {}
+                }
             } catch (e) { console.warn("小千读书笔记失败:", e); }
             renderReadingNotes();
         }
