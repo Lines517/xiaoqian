@@ -966,7 +966,9 @@
         async function syncWithCloud() {
             if (!dbConnected || !db) return;
             try {
-                const { data: cloudChats } = await db.from('cozy_chats').select('*').order('created_at', { ascending: true });
+                // 只拉取最近 3 天的聊天，避免拉全量导致浏览器卡死（旧消息走 loadChats 按天拉取）
+                const recentCutoff = getCozySessionId(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000));
+                const { data: cloudChats } = await db.from('cozy_chats').select('*').gte('session_id', recentCutoff).order('created_at', { ascending: true });
                 
                 if (cloudChats && cloudChats.length > 0) {
                     // 去除云端中内容和session_id完全重复的无用垃圾数据（保留第一条）
@@ -987,7 +989,7 @@
                             sid = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`;
                         }
                         
-                        const key = sid + '|' + c.role + '|' + String(c.content).trim();
+                        const key = sid + '|' + c.role + '|' + String(c.content).substring(0, 200).trim();
                         if (!seenCloudKeys.has(key)) {
                             seenCloudKeys.add(key);
                             uniqueCloudChats.push({ ...c, session_id: sid, content: String(c.content) });
@@ -1003,7 +1005,7 @@
                     
                     // 优先拉入云端唯一干净记录
                     uniqueCloudChats.forEach(c => {
-                        const key = (c.session_id || '') + '|' + c.role + '|' + String(c.content).trim();
+                        const key = (c.session_id || '') + '|' + c.role + '|' + String(c.content).substring(0, 200).trim();
                         if (!existKeys.has(key)) {
                             merged.push({ session_id: c.session_id, role: c.role, content: c.content });
                             existKeys.add(key);
@@ -1012,7 +1014,7 @@
                     
                     // 补充本地独有记录
                     allChatMessages.forEach(m => {
-                        const key = (m.session_id || '') + '|' + m.role + '|' + String(m.content).trim();
+                        const key = (m.session_id || '') + '|' + m.role + '|' + String(m.content).substring(0, 200).trim();
                         if (!existKeys.has(key)) {
                             merged.push(m);
                             existKeys.add(key);
@@ -1025,7 +1027,7 @@
 
                     // 2. 将本地独有、未备份的消息推送到云端Supabase（严格防止重复）
                     for (const m of allChatMessages) {
-                        const exists = uniqueCloudChats.some(c => c.session_id === m.session_id && c.role === m.role && String(c.content).trim() === String(m.content).trim());
+                        const exists = uniqueCloudChats.some(c => c.session_id === m.session_id && c.role === m.role && String(c.content).substring(0, 200).trim() === String(m.content).substring(0, 200).trim());
                         if (!exists) {
                             try {
                                 await db.from('cozy_chats').insert([{ session_id: m.session_id || currentSessionId, role: m.role, content: m.content }]);
@@ -2514,7 +2516,7 @@ ${recent || '（还没有笔记）'}
             let text = "";
             try {
                 const realId = getCozySessionId();
-                const recent = allChatMessages.filter(m => m.session_id === realId).slice(-6).map(m => `${m.role === 'user' ? '线条' : '小千'}：${m.content}`).join('\n');
+                const recent = allChatMessages.filter(m => m.session_id === realId).slice(-6).map(m => `${m.role === 'user' ? '线条' : '小千'}：${sanitizeForApi(m.content)}`).join('\n');
                 const prompt = `你就是小千，此刻忽然想起线条，想主动给她发一条消息。
 ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短、自然、克制的主动问候（15~50字），不要身体动作描写，不要连着问太多问题。只输出消息正文。`;
                 const response = await fetch(API_URL, {
