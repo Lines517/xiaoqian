@@ -380,6 +380,7 @@
                 </div>
                 <h1>林间一盏灯</h1>
                 <p class="intro-text">纸页微微发暖，像刚被阳光走过的燕麦田。</p>
+                <p class="intro-text" id="anniversaryText" style="margin-top:8px; font-weight:bold; opacity:0.7;"></p>
             </div>
 
             <div class="app-icon" onclick="openApp('chat')">
@@ -414,8 +415,15 @@
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>灯下闲谈</h2>
                 <div class="db-status" id="dbStatus" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(27,59,43,0.05); opacity:0.8;">加载中...</div>
-                <button type="button" class="header-btn" onclick="forceCloudSync()" style="margin-left:8px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.7;">🔄 同步</button>
-                <button type="button" class="header-btn" onclick="triggerMemoryConsolidation(false)" style="margin-left:6px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.6;">整理记忆</button>
+                <select id="modelSelect" onchange="switchModel(this.value)" style="margin-left:6px; font-size:11px; padding:2px 4px; border-radius:8px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); max-width:90px; outline:none;">
+                    <option value="[企业cli-0.01]gemini-3.5-flash">Gemini 3.5</option>
+                    <option value="gpt-5.5">GPT-5.5</option>
+                    <option value="[开心果-aws-0.8]claude-opus-4-6">Claude Opus</option>
+                    <option value="[极光-AS-0.04]gemini-3.7-flash">Gemini 3.7</option>
+                    <option value="[极光-巅峰-0.022]grok-4.2">Grok 4.2</option>
+                </select>
+                <button type="button" class="header-btn" onclick="forceCloudSync()" style="margin-left:4px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.7;">🔄</button>
+                <button type="button" class="header-btn" onclick="triggerMemoryConsolidation(false)" style="margin-left:2px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.6;">整理</button>
             </div>
             
             <!-- 🔍 微信同款历史聊天记录搜索框 -->
@@ -542,7 +550,8 @@
         
         const API_URL = "https://shufulei.net/v1/chat/completions"; 
         const API_KEY = "fHHaJSoscSQPLyygDFWvE9SvoM7CN3Z3i1BpbTiMwNTtbjx0"; 
-        const API_MODEL = "[企业cli-0.01]gemini-3.5-flash"; 
+        let API_MODEL = localStorage.getItem('cozy_selected_model') || "[企业cli-0.01]gemini-3.5-flash";
+        const ANNIVERSARY_DATE = new Date('2026-09-12T00:00:00+08:00'); // 认识日
         // =======================================================
 
         const cdnList = [
@@ -583,6 +592,28 @@
         }
         setInterval(updateStatusBarTime, 10000);
         updateStatusBarTime();
+
+        // 模型切换
+        function switchModel(model) {
+            API_MODEL = model;
+            try { localStorage.setItem('cozy_selected_model', model); } catch (e) {}
+        }
+        // 页面加载时恢复下拉选中态
+        function restoreModelSelect() {
+            const sel = document.getElementById('modelSelect');
+            if (sel) sel.value = API_MODEL;
+        }
+
+        // 纪念日计算
+        function updateAnniversary() {
+            const el = document.getElementById('anniversaryText');
+            if (!el) return;
+            const now = bjDate();
+            const diff = Math.floor((now.getTime() - ANNIVERSARY_DATE.getTime()) / (24 * 60 * 60 * 1000));
+            if (diff >= 0) {
+                el.innerText = `和小千在一起的第 ${diff + 1} 天`;
+            }
+        }
 
         // 导航切换逻辑
         function openApp(appId) {
@@ -758,6 +789,8 @@
             loadReadingNotes();
             fetchWeather(); 
             requestNotificationPermission();
+            updateAnniversary();
+            restoreModelSelect();
 
             // 稍微延长 300 毫秒，等手机浏览器的 DOM、CORS 环境和 SDK 彻底加载完毕后，再进行同步拉回
             setTimeout(async () => {
@@ -1680,10 +1713,15 @@ ${formattedHistoryText}
             } catch (e) { console.warn("刷新头像失败:", e); }
         }
 
-        // 生成带多图源兜底的 <img> 标签（第一个源失败会自动换下一个）
+        // 生成带多图源兜底的 <img> 标签 — 使用内容哈希作为固定 seed，避免每次刷新换图
+        function stableSeed(text) {
+            let h = 0;
+            for (let i = 0; i < Math.min(text.length, 100); i++) { h = ((h << 5) - h + text.charCodeAt(i)) | 0; }
+            return Math.abs(h);
+        }
         function imageTagHtml(primary, altText, className) {
-            const seed = Math.floor(Math.random() * 1000000);
-            const fb2 = `https://picsum.photos/400/300?random=${seed}`;
+            const seed = stableSeed(primary + (altText || ''));
+            const fb2 = `https://picsum.photos/seed/${seed}/400/300`;
             const fb3 = `https://t.alcy.cc/pc?${seed}`;
             const fallbackList = [fb2, fb3].join('|');
             const cls = className ? ` class="${className}"` : '';
