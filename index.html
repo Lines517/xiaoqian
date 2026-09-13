@@ -528,16 +528,17 @@
             loadLocalMemories();
             fetchWeather(); 
 
+            // 稍微延长 300 毫秒，等手机浏览器的 DOM、CORS 环境和 SDK 彻底加载完毕后，再进行同步拉回
             setTimeout(async () => {
                 const connected = await autoHealConnection();
                 if (connected) {
                     await syncWithCloud();
                     setTimeout(checkAutoMemory, 3000); 
                 }
-                // 确保在拉取和同步完云端数据之后，刷新一下当前的日期 Tab
+                // 同步完数据后重新精准强制刷新视图，这在手机网络卡顿时极其关键
                 renderDateTabs(); 
                 renderChatByDate(selectedDate);
-            }, 50);
+            }, 300);
         };
 
         // ================= 【1. 图片处理：压缩与预览】 =================
