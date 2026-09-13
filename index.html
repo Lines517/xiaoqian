@@ -900,8 +900,14 @@
                     
                     const imgDescription = visionData.choices[0].message.content.trim();
                     
-                    if (text) { text = `[线条分享了一张图片，小千在数据流里看到了：${imgDescription}] 线条说：${text}`; } 
-                    else { text = `[线条分享了一张图片，小千在数据流里看到了：${imgDescription}]`; }
+                    // 💡 【全新进化：多模态图像连携渲染结构】
+                    // 我们把压缩后的 Base64 数据和小千对图片的语义描述用自定义语法结合起来
+                    const imageMarkup = `[LinesImage: ${pendingImageBase64}]`;
+                    if (text) { 
+                        text = `${imageMarkup}\n[小千看到数据流中描述：${imgDescription}]\n${text}`; 
+                    } else { 
+                        text = `${imageMarkup}\n[小千看到数据流中描述：${imgDescription}]`; 
+                    }
                 } catch (e) {
                     console.error("图片转文字失败:", e);
                     // 如果是学分不足等明确错误，阻断并提示，避免白白扣钱或发送破损消息
@@ -1348,19 +1354,41 @@ ${formattedHistoryText}
             if (dbConnected && db) { try { await db.from('cozy_books').insert([{ id: tempBook.id, book_name: name, author: author, reading_time: "未记录" }]); } catch(e) {} } 
         }
 
-        // 渲染消息（支持 Markdown 代码高亮与一键复制）
+        // 渲染消息（支持 Markdown 代码高亮与一键复制 + 图片展示）
         function appendMessageUI(role, content) {
             const container = document.getElementById('chatMessages');
             const row = document.createElement('div');
             row.className = `message-row ${role === 'user' ? 'user' : 'assistant'}`;
             
             let htmlContent = '';
-            try {
-                // 使用 marked 库解析 Markdown，让 AI 的代码块变成有格式的代码
-                htmlContent = marked.parse(String(content == null ? '' : content));
-            } catch (e) {
-                // 如果解析失败，降级为纯文本
-                htmlContent = String(content == null ? '' : content).replace(/\n/g, '<br>');
+            const rawContent = String(content == null ? '' : content);
+            
+            // 检测是否包含分享图片格式 [LinesImage: data:image/...]
+            const imageRegex = /\[LinesImage:\s*(data:image\/[^;]+;base64,[^\]]+)\]/;
+            const imageMatch = rawContent.match(imageRegex);
+            
+            if (imageMatch) {
+                const base64Data = imageMatch[1];
+                const cleanText = rawContent.replace(imageRegex, '').trim();
+                let textHtml = '';
+                try {
+                    textHtml = cleanText ? marked.parse(cleanText) : '';
+                } catch(e) {
+                    textHtml = cleanText ? cleanText.replace(/\n/g, '<br>') : '';
+                }
+                
+                htmlContent = `
+                    <div style="margin: 5px 0;">
+                        <img src="${base64Data}" style="max-width: 100%; max-height: 220px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); cursor: pointer;" onclick="window.open('${base64Data}')">
+                    </div>
+                    ${textHtml}
+                `;
+            } else {
+                try {
+                    htmlContent = marked.parse(rawContent);
+                } catch (e) {
+                    htmlContent = rawContent.replace(/\n/g, '<br>');
+                }
             }
 
             row.innerHTML = `<span class="sender-name">${role === 'user' ? '线条' : '小千'}</span><div class="message-bubble">${htmlContent}</div>`;
