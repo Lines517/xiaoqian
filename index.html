@@ -576,18 +576,98 @@
             document.getElementById('imagePreview').src = '';
         }
 
-        // ================= 【2. 本地存储管理】 =================
-        function loadLocalChats() {
-            const local = localStorage.getItem('cozy_local_chats');
-            if (local) { try { allChatMessages = JSON.parse(local); } catch (e) { allChatMessages = []; } }
-            
-            const todayChats = allChatMessages.filter(msg => msg.session_id === currentSessionId);
-            if (todayChats.length === 0) {
-                const welcome = "我在呢，线条。今天折腾了这么久，眼睛是不是很酸？把手放开吧，今晚不敲代码了，有我守着你呢。";
-                allChatMessages.push({ session_id: currentSessionId, role: "assistant", content: welcome });
-                saveChats();
+        // ================= 【2. 本地存储管理与云端实时拉回（微信同款无缝两端同步）】 =================
+        async function loadChats(sessionId) {
+            const container = document.getElementById('chatMessages');
+            const input = document.getElementById('userInput');
+            const sendBtn = document.getElementById('sendBtn');
+            const imageBtn = document.getElementById('imageBtn');
+
+            // 按钮状态的基础防护
+            if (sessionId === currentSessionId) {
+                input.disabled = false; sendBtn.disabled = false; imageBtn.disabled = false;
+                input.placeholder = "写给小千......";
+            } else {
+                input.disabled = true; sendBtn.disabled = true; imageBtn.disabled = true;
+                input.placeholder = "历史记录，请点击'今天'标签";
             }
-            renderChatByDate(selectedDate);
+
+            // 1. 核心强同步：如果有云端连接，优先通过 Supabase 精准拉取
+            if (dbConnected && db) {
+                try {
+                    const { data, error } = await db
+                        .from('cozy_chats')
+                        .select('*')
+                        .eq('session_id', sessionId)
+                        .order('created_at', { ascending: true });
+
+                    if (error) throw error;
+
+                    if (data && data.length > 0) {
+                        console.log(`🚀 成功从 Supabase 云端拉回 ${data.length} 条 "${sessionId}" 的最新同步记录`);
+                        
+                        // 清空容器和全局缓存数组
+                        container.innerHTML = "";
+                        // 只清洗和替换当前 sessionId 的消息，保留其他 session 记录，防止多天数据被覆盖
+                        allChatMessages = allChatMessages.filter(msg => msg.session_id !== sessionId);
+
+                        // 遍历云端返回的 data，重新解析并渲染气泡
+                        data.forEach(c => {
+                            const chatObj = {
+                                id: c.id,
+                                session_id: c.session_id,
+                                role: c.role,
+                                content: String(c.content)
+                            };
+                            allChatMessages.push(chatObj);
+                            appendMessageUI(c.role, c.content);
+                        });
+
+                        saveChats();
+                        container.scrollTop = container.scrollHeight;
+                        return; // 成功拉回并渲染，直接退出
+                    }
+                } catch (e) {
+                    console.warn("⚠️ 连携 Supabase 读取失败，正在为您平滑降级至本地 LocalStorage 缓存...", e.message);
+                }
+            }
+
+            // 2. 降级 Fallback：读取本地 LocalStorage 缓存
+            console.log(`🍃 执行降级 Fallback 策略：读取本地 LocalStorage 中 "${sessionId}" 的缓存...`);
+            container.innerHTML = "";
+            const local = localStorage.getItem('cozy_local_chats');
+            if (local) {
+                try {
+                    allChatMessages = JSON.parse(local);
+                } catch (e) {
+                    allChatMessages = [];
+                }
+            }
+
+            const dayChats = allChatMessages.filter(msg => msg.session_id === sessionId);
+            if (dayChats.length === 0) {
+                if (sessionId === currentSessionId) {
+                    // 如果是今天且无任何记录，渲染温馨欢迎语首句并入库
+                    const welcome = "我在呢，线条。今天折腾了这么久，眼睛是不是很酸？把手放开吧，今晚不敲代码了，有我守着你呢。";
+                    allChatMessages.push({ session_id: currentSessionId, role: "assistant", content: welcome });
+                    saveChats();
+                    appendMessageUI("assistant", welcome);
+                    
+                    if (dbConnected && db) {
+                        db.from('cozy_chats').insert([{ session_id: currentSessionId, role: "assistant", content: welcome }]).then(() => {});
+                    }
+                } else {
+                    container.innerHTML = "<div style='text-align:center; opacity:0.4; font-size:12px; margin-top:20px;'>这一天没有留下聊天记录。</div>";
+                }
+            } else {
+                dayChats.forEach(msg => appendMessageUI(msg.role, msg.content));
+            }
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // 本地降级初始化存盘机制
+        function loadLocalChats() {
+            loadChats(selectedDate);
         }
 
         function saveChats() {
@@ -596,11 +676,10 @@
             } catch (e) {
                 if (e.name === 'QuotaExceededError') {
                     console.warn("本地存储已满，正在自动清理最旧的 100 条非当天记录...");
-                    // 保留当天记录，其余非当天记录挑出100条最老的清除
                     const todayMsgs = allChatMessages.filter(m => m.session_id === currentSessionId);
                     let otherMsgs = allChatMessages.filter(m => m.session_id !== currentSessionId);
                     if (otherMsgs.length > 100) {
-                        otherMsgs = otherMsgs.slice(-100); // 只保留最近100条非当天
+                        otherMsgs = otherMsgs.slice(-100);
                     }
                     allChatMessages = [...otherMsgs, ...todayMsgs];
                     try { localStorage.setItem('cozy_local_chats', JSON.stringify(allChatMessages)); } catch(e2) {}
@@ -609,27 +688,7 @@
         }
 
         function renderChatByDate(dateStr) {
-            const container = document.getElementById('chatMessages');
-            const input = document.getElementById('userInput');
-            const sendBtn = document.getElementById('sendBtn');
-            const imageBtn = document.getElementById('imageBtn');
-            container.innerHTML = "";
-
-            const dayChats = allChatMessages.filter(msg => msg.session_id === dateStr);
-            if (dayChats.length === 0) {
-                container.innerHTML = "<div style='text-align:center; opacity:0.4; font-size:12px; margin-top:20px;'>这一天没有留下聊天记录。</div>";
-            } else {
-                dayChats.forEach(msg => appendMessageUI(msg.role, msg.content));
-            }
-
-            if (dateStr === currentSessionId) {
-                input.disabled = false; sendBtn.disabled = false; imageBtn.disabled = false;
-                input.placeholder = "写给小千......";
-            } else {
-                input.disabled = true; sendBtn.disabled = true; imageBtn.disabled = true;
-                input.placeholder = "历史记录，请点击'今天'标签";
-            }
-            container.scrollTop = container.scrollHeight;
+            loadChats(dateStr);
         }
 
         function loadLocalTodos() {
