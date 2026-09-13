@@ -876,11 +876,19 @@
                         union.forEach(m => appendMessageUI(m.role, m.content, m.time));
                         saveChats();
 
-                        // 把本地独有、云端缺失的消息回传云端（补救此前可能的误删）
+                        // 把本地独有、云端缺失的消息回传云端（补救此前可能的误删），并尽量保留原时间
                         for (const m of union) {
                             const k = (m.role || '') + '|' + String(m.content || '').trim();
                             if (!cloudKeys.has(k)) {
-                                try { await db.from('cozy_chats').insert([{ session_id: sessionId, role: m.role, content: m.content }]); }
+                                try {
+                                    const row = { session_id: sessionId, role: m.role, content: m.content };
+                                    if (m.time && /^\d{4}-\d{2}-\d{2}T/.test(m.time)) {
+                                        row.created_at = m.time; // 已是完整 ISO
+                                    } else if (m.time && /^\d{2}:\d{2}$/.test(m.time)) {
+                                        row.created_at = `${sessionId}T${m.time}:00+08:00`; // 用原北京时间的时分
+                                    }
+                                    await db.from('cozy_chats').insert([row]);
+                                }
                                 catch (e) { console.warn("回传本地消息失败:", e.message); }
                             }
                         }
