@@ -850,30 +850,41 @@
 
                     if (data && data.length > 0) {
                         console.log(`🚀 成功从 Supabase 云端拉回 ${data.length} 条 "${sessionId}" 的最新同步记录`);
-                        
-                        // 清空容器和全局缓存数组
                         container.innerHTML = "";
-                        // 只清洗和替换当前 sessionId 的消息，保留其他 session 记录，防止多天数据被覆盖
-                        allChatMessages = allChatMessages.filter(msg => msg.session_id !== sessionId);
 
-                        // 遍历云端返回的 data，重新解析并渲染气泡（连续重复的记录只保留一条）
-                        let lastKey = null;
+                        // 合并：云端 + 本地（取并集，绝不丢弃任何一方，防止云端异常导致本地被清空）
+                        const localOnes = allChatMessages.filter(msg => msg.session_id === sessionId);
+                        const union = [];
+                        const seen = new Set();
+                        const cloudKeys = new Set();
                         data.forEach(c => {
-                            const key = (c.role || '') + '|' + String(c.content || '').trim();
-                            if (key === lastKey) return; // 跳过紧挨着的重复记录
-                            lastKey = key;
-                            const chatObj = {
-                                id: c.id,
-                                session_id: c.session_id,
-                                role: c.role,
-                                content: String(c.content),
-                                time: formatTimeFromISO(c.created_at)
-                            };
-                            allChatMessages.push(chatObj);
-                            appendMessageUI(c.role, c.content, chatObj.time);
+                            const k = (c.role || '') + '|' + String(c.content || '').trim();
+                            cloudKeys.add(k);
+                            if (seen.has(k)) return; // 云端紧挨重复只留一条
+                            seen.add(k);
+                            union.push({ id: c.id, session_id: c.session_id, role: c.role, content: String(c.content), time: formatTimeFromISO(c.created_at) });
+                        });
+                        // 本地独有（云端缺失的）补进来，稍后回传云端
+                        localOnes.forEach(m => {
+                            const k = (m.role || '') + '|' + String(m.content || '').trim();
+                            if (seen.has(k)) return;
+                            seen.add(k);
+                            union.push(m);
                         });
 
+                        allChatMessages = allChatMessages.filter(msg => msg.session_id !== sessionId).concat(union);
+                        union.forEach(m => appendMessageUI(m.role, m.content, m.time));
                         saveChats();
+
+                        // 把本地独有、云端缺失的消息回传云端（补救此前可能的误删）
+                        for (const m of union) {
+                            const k = (m.role || '') + '|' + String(m.content || '').trim();
+                            if (!cloudKeys.has(k)) {
+                                try { await db.from('cozy_chats').insert([{ session_id: sessionId, role: m.role, content: m.content }]); }
+                                catch (e) { console.warn("回传本地消息失败:", e.message); }
+                            }
+                        }
+
                         container.scrollTop = container.scrollHeight;
                         return; // 成功拉回并渲染，直接退出
                     }
@@ -989,14 +1000,12 @@
                             sid = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`;
                         }
                         
-                        const key = sid + '|' + c.role + '|' + String(c.content).substring(0, 200).trim();
+                        const key = sid + '|' + c.role + '|' + String(c.content).trim();
                         if (!seenCloudKeys.has(key)) {
                             seenCloudKeys.add(key);
                             uniqueCloudChats.push({ ...c, session_id: sid, content: String(c.content) });
-                        } else {
-                            // 自动静默清理云端的重复冗余垃圾记录，防止多次保存污染
-                            db.from('cozy_chats').delete().eq('id', c.id).then(() => {});
                         }
+                        // ⚠️ 绝不再自动删除云端任何记录（此前误删过数据）
                     });
 
                     // 1. 本地和云端进行强双向合并，绝不覆盖已有历史记录
@@ -1005,7 +1014,7 @@
                     
                     // 优先拉入云端唯一干净记录
                     uniqueCloudChats.forEach(c => {
-                        const key = (c.session_id || '') + '|' + c.role + '|' + String(c.content).substring(0, 200).trim();
+                        const key = (c.session_id || '') + '|' + c.role + '|' + String(c.content).trim();
                         if (!existKeys.has(key)) {
                             merged.push({ session_id: c.session_id, role: c.role, content: c.content });
                             existKeys.add(key);
@@ -1014,7 +1023,7 @@
                     
                     // 补充本地独有记录
                     allChatMessages.forEach(m => {
-                        const key = (m.session_id || '') + '|' + m.role + '|' + String(m.content).substring(0, 200).trim();
+                        const key = (m.session_id || '') + '|' + m.role + '|' + String(m.content).trim();
                         if (!existKeys.has(key)) {
                             merged.push(m);
                             existKeys.add(key);
@@ -1027,7 +1036,7 @@
 
                     // 2. 将本地独有、未备份的消息推送到云端Supabase（严格防止重复）
                     for (const m of allChatMessages) {
-                        const exists = uniqueCloudChats.some(c => c.session_id === m.session_id && c.role === m.role && String(c.content).substring(0, 200).trim() === String(m.content).substring(0, 200).trim());
+                        const exists = uniqueCloudChats.some(c => c.session_id === m.session_id && c.role === m.role && String(c.content).trim() === String(m.content).trim());
                         if (!exists) {
                             try {
                                 await db.from('cozy_chats').insert([{ session_id: m.session_id || currentSessionId, role: m.role, content: m.content }]);
