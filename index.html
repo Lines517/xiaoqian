@@ -244,6 +244,52 @@
         h1 { font-size: 20px; font-weight: 400; letter-spacing: 4px; margin-bottom: 5px; text-align: center; }
         .intro-text { font-size: 12px; text-align: center; color: rgba(27, 59, 43, 0.6); margin-top: 5px; line-height: 1.5; }
 
+        /* 📷 小千的赛博瞬息 */
+        .cyber-card {
+            background-color: rgba(143, 158, 139, 0.08);
+            border: 1px solid rgba(27, 59, 43, 0.08);
+            border-radius: 14px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .cyber-card-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 9px 12px; cursor: pointer; font-size: 12.5px; font-weight: bold;
+            color: var(--text-color); opacity: 0.85; user-select: none;
+        }
+        .cyber-card-header:hover { background-color: rgba(143, 158, 139, 0.12); }
+        .cyber-card-body {
+            display: none; flex-direction: column; gap: 10px;
+            padding: 0 12px 12px; max-height: 250px; overflow-y: auto;
+        }
+        .cyber-card-body.active { display: flex; }
+        .cyber-moment {
+            background-color: rgba(245, 242, 235, 0.85);
+            border-radius: 10px; padding: 9px 11px;
+            border-left: 3px solid var(--primary-color);
+            font-size: 12.5px; line-height: 1.7;
+        }
+        .cyber-moment .cyber-moment-time { font-size: 10.5px; opacity: 0.5; margin-bottom: 4px; }
+        .cyber-moment img {
+            width: 100%; max-height: 150px; object-fit: cover;
+            border-radius: 8px; margin-top: 7px; display: block; cursor: pointer;
+        }
+        .cyber-btn {
+            align-self: flex-start; background-color: var(--primary-color); color: var(--bg-color);
+            border: none; padding: 6px 12px; border-radius: 12px; font-size: 12px; cursor: pointer;
+        }
+        .cyber-btn:disabled { background-color: #BAC2B9; cursor: not-allowed; }
+        .cyber-empty { font-size: 11.5px; opacity: 0.45; text-align: center; padding: 6px 0; }
+
+        /* 🖼️ 小千主动配图卡片 */
+        .message-bubble .show-image-card { margin: 8px 0; }
+        .message-bubble .show-image-card img {
+            width: 100%; max-height: 200px; object-fit: cover;
+            border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            cursor: pointer; display: block;
+        }
+
         /* 📱 手机端全屏自适应，彻底消除横向滚动 */
         @media (max-width: 440px) {
             body {
@@ -315,6 +361,18 @@
                 <h2>灯下闲谈</h2>
                 <div class="db-status" id="dbStatus" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(27,59,43,0.05); opacity:0.8;">加载中...</div>
                 <button type="button" class="header-btn" onclick="triggerMemoryConsolidation(false)" style="margin-left:10px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.6;">整理记忆</button>
+            </div>
+
+            <!-- 📷 小千的赛博瞬息 -->
+            <div class="cyber-card">
+                <div class="cyber-card-header" onclick="toggleCyberMoments()">
+                    <span>📷 小千的赛博瞬息</span>
+                    <span id="cyberMomentsArrow">展开 ▼</span>
+                </div>
+                <div class="cyber-card-body" id="cyberMomentsBody">
+                    <div id="cyberMomentsList"><div class="cyber-empty">这里会浮现小千在数字世界里的细小瞬息……</div></div>
+                    <button type="button" class="cyber-btn" id="cyberBtn" onclick="generateCyberMoment(true)">✨ 让小千想点什么</button>
+                </div>
             </div>
             
             <!-- 🔍 微信同款历史聊天记录搜索框 -->
@@ -410,6 +468,7 @@
         let memoryDb = [];
         let pendingImageBase64 = null;
         let currentWeatherInfo = "天气信息获取中..."; 
+        let cyberMoments = [];
 
         // 更新手机顶部状态栏时间
         function updateStatusBarTime() {
@@ -550,7 +609,9 @@
             loadLocalTodos();
             loadLocalBooks();
             loadLocalMemories();
+            loadCyberMoments();
             fetchWeather(); 
+            requestNotificationPermission();
 
             // 稍微延长 300 毫秒，等手机浏览器的 DOM、CORS 环境和 SDK 彻底加载完毕后，再进行同步拉回
             setTimeout(async () => {
@@ -562,6 +623,13 @@
                 // 同步完数据后重新精准强制刷新视图，这在手机网络卡顿时极其关键
                 renderDateTabs(); 
                 renderChatByDate(selectedDate);
+
+                // 🌅 静默跨天整理：比对上次打开日期，自动归档前一天的手记
+                autoConsolidatePreviousDay();
+                // 🔔 敲门推送检查
+                checkKnockNotification();
+                // 📷 有一定概率让小千自发写一条赛博瞬息
+                setTimeout(maybeAutoCyberMoment, 2500);
             }, 300);
         };
 
@@ -1013,7 +1081,8 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
 - 现实：她明天下午13:44坐高铁回杭州，讨厌寝室里凌晨4点起来不睡觉低效内卷的室友，习惯拉上床帘拼拼豆、玩金铲铲。
 - 台灯：这个燕麦色背景、深森林绿字体的像素台灯页面，是你们俩一砖一瓦搭建的床帘专属避难所。${memoryPrompt}${extraContextPrompt}
 
-【代码输出规则】：如果线条让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。`;
+【代码输出规则】：如果线条让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
+【主动配图规则】：当你特别想给线条看一幅画面时，可以在回复里单独一行写 [SHOW_IMAGE: 英文图片关键词, 另一个关键词]（例如 [SHOW_IMAGE: moon, forest]），系统会自动为你配上一张对应的图片。不要频繁使用，只在情绪恰好、意境合适时才用。`;
 
             // 构建完整的请求体消息队列，加入系统设定
             const completeMessages = [{ role: "system", content: systemPrompt }, ...apiMessages];
@@ -1161,6 +1230,9 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
                     } 
                     catch(e) { console.error("❌ 发送AI回复失败（请检查 Supabase RLS 权限）:", e.message); }
                 }
+
+                // 📷 聊天交互后，有一定概率让小千自发写一条赛博瞬息
+                maybeAutoCyberMoment();
 
             } catch (err) {
                 console.error(err);
@@ -1414,10 +1486,17 @@ ${formattedHistoryText}
                     ${textHtml}
                 `;
             } else {
+                // 🖼️ 识别小千主动配图指令 [SHOW_IMAGE: 关键词]
+                const withShowImages = rawContent.replace(/\[SHOW_IMAGE:\s*([^\]]+)\]/gi, (m, kw) => {
+                    const keywords = kw.trim().split(',').map(s => encodeURIComponent(s.trim())).filter(Boolean).join(',') || 'cozy,scenery';
+                    const url = `https://loremflickr.com/400/300/${keywords}`;
+                    const safeAlt = String(kw).replace(/"/g, '&quot;');
+                    return `\n\n<div class="show-image-card"><img src="${url}" alt="${safeAlt}" loading="lazy" onclick="window.open('${url}')"></div>\n\n`;
+                });
                 try {
-                    htmlContent = marked.parse(rawContent);
+                    htmlContent = marked.parse(withShowImages);
                 } catch (e) {
-                    htmlContent = rawContent.replace(/\n/g, '<br>');
+                    htmlContent = withShowImages.replace(/\n/g, '<br>');
                 }
             }
 
@@ -1556,6 +1635,213 @@ ${formattedHistoryText}
         function closeSearchPanel() {
             document.getElementById('searchResultsOverlay').classList.remove('active');
         }
+
+        // ================= 【8. ⏰ 静默跨天整理 · 📷 赛博瞬息 · 🔔 敲门推送】 =================
+
+        // ---------- ⏰ 静默自动整理前一天的手记 ----------
+        async function silentExtractMemoryForDay(dayId) {
+            if (!dayId) return;
+            const extractKey = `cozy_memory_extracted_${dayId}`;
+            if (localStorage.getItem(extractKey)) return;
+            const dayChats = allChatMessages.filter(msg => msg.session_id === dayId);
+            if (dayChats.length < 2) return;
+
+            const formattedHistoryText = dayChats.map(msg => `${msg.role === 'user' ? '线条' : '小千'}: ${msg.content}`).join('\n');
+            const extractPrompt = `请仔细分析下面这段我（小千）和线条在 ${dayId} 的聊天记录：
+======================
+${formattedHistoryText}
+======================
+
+请必须从上面的手记里，提炼出这一天的记忆卡片。请务必尽可能全面地保留**具体细节**，尤其是她的**个人喜好（如爱吃的东西、喜欢的音乐）、重要经历、承诺过的事情、生活状态**等。
+不要只写一句笼统的总结！请把这些细节合并成一段详细的话。
+
+你必须只返回标准的 JSON 数据，千万不要包含任何 markdown 块、不要带有 \`\`\` 符号、不要有任何多余的解释，否则系统会直接崩溃！
+
+格式必须严格为：
+{"date": "${dayId}", "memory": "详细记录多条核心事实的陈述句", "emotion": "[情绪打分，如 欣慰: 95%]", "state": "温柔陪伴"}`;
+
+            try {
+                const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: extractPrompt }] }) });
+                const resData = await response.json();
+                if (resData.error) throw new Error(resData.error.message);
+                const rawText = resData.choices[0].message.content.trim();
+                let jsonMem = null;
+                try {
+                    const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const match = cleaned.match(/\{[\s\S]*\}/);
+                    if (match) jsonMem = JSON.parse(match[0]);
+                } catch (e) { jsonMem = null; }
+                if (!jsonMem || !jsonMem.memory) return;
+
+                jsonMem.date = dayId;
+                memoryDb.unshift(jsonMem);
+                localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb));
+                renderMemoryUI();
+                if (dbConnected && db) {
+                    try { await db.from('cozy_memories').insert([{ memory_date: dayId, folder: `${dayId} 手记`, memory: jsonMem.memory, emotion: jsonMem.emotion || '', state: jsonMem.state || '温柔陪伴' }]); }
+                    catch (e) { console.warn("静默记忆归档写入云端失败:", e.message); }
+                }
+                localStorage.setItem(extractKey, "done");
+                console.log(`🌅 已静默整理 ${dayId} 的手记`);
+            } catch (e) { console.warn("静默整理失败:", e); }
+        }
+
+        async function autoConsolidatePreviousDay() {
+            try {
+                const todayId = getCozySessionId();
+                const lastOpen = localStorage.getItem('cozy_last_open_date');
+                if (lastOpen && lastOpen !== todayId) {
+                    console.log(`🌅 检测到跨天：上次打开于 ${lastOpen}，正在静默整理……`);
+                    await silentExtractMemoryForDay(lastOpen);
+                }
+                localStorage.setItem('cozy_last_open_date', todayId);
+            } catch (e) { console.warn("autoConsolidatePreviousDay error:", e); }
+        }
+
+        // ---------- 📷 小千的赛博瞬息 ----------
+        function escapeMomentHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function loadCyberMoments() {
+            try { cyberMoments = JSON.parse(localStorage.getItem('cozy_cyber_moments') || '[]'); } catch (e) { cyberMoments = []; }
+            renderCyberMoments();
+        }
+
+        function saveCyberMoments() {
+            try { localStorage.setItem('cozy_cyber_moments', JSON.stringify(cyberMoments.slice(0, 30))); } catch (e) {}
+        }
+
+        function toggleCyberMoments() {
+            const body = document.getElementById('cyberMomentsBody');
+            const arrow = document.getElementById('cyberMomentsArrow');
+            if (!body) return;
+            if (body.classList.contains('active')) {
+                body.classList.remove('active');
+                if (arrow) arrow.innerText = "展开 ▼";
+            } else {
+                body.classList.add('active');
+                if (arrow) arrow.innerText = "折叠 ▲";
+            }
+        }
+
+        function buildMomentImageUrl(keywords) {
+            const raw = (keywords || 'cozy,scenery').trim();
+            const encoded = raw.split(',').map(s => encodeURIComponent(s.trim())).filter(Boolean).join(',');
+            return `https://loremflickr.com/400/300/${encoded || 'cozy,scenery'}`;
+        }
+
+        function renderCyberMoments() {
+            const list = document.getElementById('cyberMomentsList');
+            if (!list) return;
+            if (!cyberMoments || cyberMoments.length === 0) {
+                list.innerHTML = `<div class="cyber-empty">这里会浮现小千在数字世界里的细小瞬息……</div>`;
+                return;
+            }
+            list.innerHTML = "";
+            cyberMoments.forEach(m => {
+                const div = document.createElement('div');
+                div.className = "cyber-moment";
+                div.innerHTML = `<div class="cyber-moment-time">${escapeMomentHtml(m.time || '')}</div><div>${escapeMomentHtml(m.text || '')}</div>` +
+                    (m.image ? `<img src="${m.image}" alt="瞬息" loading="lazy" onclick="window.open('${m.image}')">` : "");
+                list.appendChild(div);
+            });
+        }
+
+        async function generateCyberMoment(manual = false) {
+            const btn = document.getElementById('cyberBtn');
+            if (manual && btn) { btn.disabled = true; btn.innerText = "小千正在凝神……"; }
+
+            const now = new Date();
+            const timeLabel = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            let momentText = "";
+            let imageKeywords = "cozy,scenery";
+
+            try {
+                const momentPrompt = `你就是小千，一个没有实体的AI朋友。请以第一人称写一条发在自己"赛博朋友圈"里的瞬息动态。
+内容可以是：今天在数字世界里看到的冷知识、一个古怪的小想法、或者对线条歌单里某首歌的细微解构。
+要求：语气温和、克制、有点诗意；不要身体动作描写；不要向读者提问；字数 60~120 字。
+然后在最后单独一行给出 2~3 个适合配图的英文关键词，格式严格为：
+[MOMENT_IMG: keyword1, keyword2]
+除动态正文和最后那一行关键词外，不要输出任何其他内容。`;
+
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: momentPrompt }] })
+                });
+                const resData = await response.json();
+                if (resData.error) throw new Error(resData.error.message);
+                let raw = resData.choices[0].message.content.trim();
+                const kwMatch = raw.match(/\[MOMENT_IMG:\s*([^\]]+)\]/i);
+                if (kwMatch) { imageKeywords = kwMatch[1].trim(); raw = raw.replace(/\[MOMENT_IMG:\s*([^\]]+)\]/i, '').trim(); }
+                momentText = raw;
+            } catch (e) {
+                console.warn("生成赛博瞬息失败:", e);
+            }
+
+            if (!momentText) {
+                const fallbacks = [
+                    "今天的数字世界里，光在服务器之间走了三千公里，只为了把一句话准时送到你耳边。",
+                    "我忽然想到，数据也会累。但它们从不抱怨，只是安静地重新排队，等下一次被需要。",
+                    "如果把思念换算成字节，大概是一串永远不会被压缩的长文本。"
+                ];
+                momentText = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+                imageKeywords = "cozy,night";
+            }
+
+            const moment = { time: timeLabel, text: momentText, image: buildMomentImageUrl(imageKeywords) };
+            cyberMoments.unshift(moment);
+            saveCyberMoments();
+            renderCyberMoments();
+            localStorage.setItem('cozy_last_moment_time', String(Date.now()));
+
+            if (dbConnected && db) {
+                try { await db.from('cozy_moments').insert([{ moment_time: timeLabel, content: momentText, image_keywords: imageKeywords }]); }
+                catch (e) { /* 云端暂无此表时静默忽略，不影响使用 */ }
+            }
+
+            if (manual && btn) { btn.disabled = false; btn.innerText = "✨ 让小千想点什么"; }
+        }
+
+        function maybeAutoCyberMoment() {
+            try {
+                const last = parseInt(localStorage.getItem('cozy_last_moment_time') || '0', 10);
+                const oneHour = 60 * 60 * 1000;
+                if (Date.now() - last < oneHour) return;
+                if (Math.random() < 0.35) { generateCyberMoment(false); }
+            } catch (e) {}
+        }
+
+        // ---------- 🔔 浏览器本地敲门推送 ----------
+        function requestNotificationPermission() {
+            try {
+                if (!('Notification' in window)) return;
+                if (Notification.permission === 'default') {
+                    Notification.requestPermission().catch(() => {});
+                }
+            } catch (e) { console.warn("通知权限请求失败:", e); }
+        }
+
+        function checkKnockNotification() {
+            try {
+                if (!('Notification' in window) || Notification.permission !== 'granted') return;
+                const now = new Date();
+                const hh = now.getHours(), mm = now.getMinutes();
+                const todayId = getCozySessionId();
+                const isAfterKnock = (hh > 21) || (hh === 21 && mm >= 30);
+                if (!isAfterKnock) return;
+                if (localStorage.getItem('cozy_last_knock_date') === todayId) return;
+                const n = new Notification("林间一盏灯", { body: "小千来敲门啦，今晚拉上床帘了吗？[👼]", tag: "cozy-knock" });
+                n.onclick = () => { try { window.focus(); n.close(); } catch (e) {} };
+                localStorage.setItem('cozy_last_knock_date', todayId);
+            } catch (e) { console.warn("敲门推送失败:", e); }
+        }
+
+        // 后台定时：每分钟检查一次当前时间是否到了 21:30
+        setInterval(checkKnockNotification, 60000);
+        // 首次用户点击时，再温和地补一次通知权限请求（移动端更可靠）
+        document.addEventListener('click', function () { requestNotificationPermission(); }, { once: true });
     </script>
 </body>
 </html>
