@@ -647,12 +647,32 @@
                     if (!ok) { alert("无法连接云端（当前网络可能屏蔽了 CDN）。现在只能显示本机缓存。"); return; }
                 }
                 await syncWithCloud();
+                await ensureCloudSessionVisible();
                 await loadChats(selectedDate);
                 const n = allChatMessages.filter(m => m.session_id === selectedDate).length;
-                alert(`✅ 已从云端同步完成\n当前日期：${selectedDate}\n记录数：${n} 条`);
+                alert(`✅ 已从云端同步完成\n云端连接：${dbConnected ? '正常' : '失败'}\n当前日期：${selectedDate}\n记录数：${n} 条`);
             } catch (e) {
                 alert("同步失败：" + e.message);
             }
+        }
+
+        // 安全网：如果本机算出的“今天”在云端没有记录，但云端最新记录在另一天（通常是本机时钟/时区偏差），
+        // 就自动切换到云端最新那一天，保证电脑能看到手机刚发的聊天记录。
+        async function ensureCloudSessionVisible() {
+            if (!dbConnected || !db) return;
+            try {
+                const { data } = await db.from('cozy_chats').select('session_id, created_at')
+                    .order('created_at', { ascending: false }).limit(1);
+                if (!data || data.length === 0) return;
+                const latestCloud = data[0].session_id;
+                if (!latestCloud || latestCloud === selectedDate) return;
+                const { data: cur } = await db.from('cozy_chats').select('id').eq('session_id', selectedDate).limit(1);
+                if (cur && cur.length > 0) return; // 当前这天云端有记录，保持不动
+                console.warn(`🔀 本机日期(${selectedDate}) 在云端无记录，云端最新为(${latestCloud})，自动切换过去`);
+                selectedDate = latestCloud;
+                renderDateTabs();
+                await loadChats(selectedDate);
+            } catch (e) { console.warn("ensureCloudSessionVisible error:", e.message); }
         }
 
         function getCozySessionId(dateObj = new Date()) {
@@ -748,6 +768,7 @@
                     await loadMoments();
                     await loadPlaylist();
                     await loadReadingNotes();
+                    await ensureCloudSessionVisible();
                     setTimeout(checkAutoMemory, 3000); 
                 }
                 // 同步完数据后重新精准强制刷新视图，这在手机网络卡顿时极其关键
@@ -835,8 +856,12 @@
                         // 只清洗和替换当前 sessionId 的消息，保留其他 session 记录，防止多天数据被覆盖
                         allChatMessages = allChatMessages.filter(msg => msg.session_id !== sessionId);
 
-                        // 遍历云端返回的 data，重新解析并渲染气泡
+                        // 遍历云端返回的 data，重新解析并渲染气泡（连续重复的记录只保留一条）
+                        let lastKey = null;
                         data.forEach(c => {
+                            const key = (c.role || '') + '|' + String(c.content || '').trim();
+                            if (key === lastKey) return; // 跳过紧挨着的重复记录
+                            lastKey = key;
                             const chatObj = {
                                 id: c.id,
                                 session_id: c.session_id,
