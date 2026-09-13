@@ -363,10 +363,8 @@
         const SUPABASE_URL = "https://kejcaijcqlfmtlfxktrk.supabase.co";
         const SUPABASE_KEY = "sb_publishable_xa16IttRP-xHQdHSiDNCsA_3dOlQutU";
         
-        // 自动识别当前的网页环境：如果在线上则使用相对路径连接，本地运行则使用 http://localhost:3000
-        const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-            ? "http://localhost:3000" 
-            : window.location.origin;
+        // 自动识别当前的网页运行环境：无论是本地、还是通过穿透网址访问，都动态绑定当前的自托管后端
+        const BACKEND_URL = window.location.origin;
         // =======================================================
 
         const cdnList = [
@@ -425,26 +423,10 @@
 
         async function autoHealConnection() {
             const statusLabel = document.getElementById('dbStatus');
-            if (location.protocol === 'file:') {
-                statusLabel.innerText = "🍃 本地保护";
-                statusLabel.style.color = "#8F9E8B";
-                return false;
-            }
-            for (let url of cdnList) {
-                try {
-                    await loadScript(url);
-                    if (typeof supabase !== 'undefined') {
-                        db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-                        dbConnected = true;
-                        statusLabel.innerText = "☁️ 云端同步";
-                        statusLabel.style.color = "#1B3B2B";
-                        return true;
-                    }
-                } catch (e) { console.warn("CDN load failed: " + url); }
-            }
-            statusLabel.innerText = "🍃 本地保护";
-            statusLabel.style.color = "#8F9E8B";
-            return false;
+            statusLabel.innerText = "🏠 本地硬盘";
+            statusLabel.style.color = "#1B3B2B";
+            dbConnected = true;
+            return true;
         }
 
         function getCozySessionId(dateObj = new Date()) {
@@ -656,115 +638,90 @@
 
         // ================= 【3. 云端同步：永久备份与旧数据修复】 =================
         async function syncWithCloud() {
-            if (!dbConnected || !db) return;
+            // 在自托管模式下，我们直接向你本地的 Express 后端同步数据
             try {
-                const { data: cloudChats } = await db.from('cozy_chats').select('*').order('created_at', { ascending: true });
+                // 1. 从本地后端数据库拉取已存的所有聊天记录
+                const res = await fetch(`${BACKEND_URL}/api/chats`);
+                const localData = await res.json();
+                const localChats = localData.data || [];
+
+                // 2. 双向去重合并
+                const merged = [];
+                const existKeys = new Set();
                 
-                if (cloudChats && cloudChats.length > 0) {
-                    // 去除云端中内容和session_id完全重复的无用垃圾数据（保留第一条）
-                    const seenCloudKeys = new Set();
-                    const uniqueCloudChats = [];
-                    cloudChats.forEach(c => {
-                        let sid = c.session_id;
-                        if (!sid || sid === 'undefined') {
-                            const createdDate = c.created_at ? new Date(c.created_at) : new Date();
-                            const yyyy = createdDate.getFullYear();
-                            const mm = String(createdDate.getMonth() + 1).padStart(2, '0');
-                            const dd = String(createdDate.getDate()).padStart(2, '0');
-                            sid = `${yyyy}-${mm}-${dd}`;
-                        }
-                        sid = sid.replace(/\//g, '-');
-                        const dateMatch = sid.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
-                        if (dateMatch) {
-                            sid = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`;
-                        }
-                        
-                        const key = sid + '|' + c.role + '|' + String(c.content).trim();
-                        if (!seenCloudKeys.has(key)) {
-                            seenCloudKeys.add(key);
-                            uniqueCloudChats.push({ ...c, session_id: sid, content: String(c.content) });
-                        } else {
-                            // 自动静默清理云端的重复冗余垃圾记录，防止多次保存污染
-                            db.from('cozy_chats').delete().eq('id', c.id).then(() => {});
-                        }
-                    });
-
-                    // 1. 本地和云端进行强双向合并，绝不覆盖已有历史记录
-                    const merged = [];
-                    const existKeys = new Set();
-                    
-                    // 优先拉入云端唯一干净记录
-                    uniqueCloudChats.forEach(c => {
-                        const key = (c.session_id || '') + '|' + c.role + '|' + String(c.content).trim();
-                        if (!existKeys.has(key)) {
-                            merged.push({ session_id: c.session_id, role: c.role, content: c.content });
-                            existKeys.add(key);
-                        }
-                    });
-                    
-                    // 补充本地独有记录
-                    allChatMessages.forEach(m => {
-                        const key = (m.session_id || '') + '|' + m.role + '|' + String(m.content).trim();
-                        if (!existKeys.has(key)) {
-                            merged.push(m);
-                            existKeys.add(key);
-                        }
-                    });
-                    
-                    merged.sort((a, b) => new Date(a.session_id) - new Date(b.session_id));
-                    allChatMessages = merged;
-                    saveChats();
-
-                    // 2. 将本地独有、未备份的消息推送到云端Supabase（严格防止重复）
-                    for (const m of allChatMessages) {
-                        const exists = uniqueCloudChats.some(c => c.session_id === m.session_id && c.role === m.role && String(c.content).trim() === String(m.content).trim());
-                        if (!exists) {
-                            try {
-                                await db.from('cozy_chats').insert([{ session_id: m.session_id || currentSessionId, role: m.role, content: m.content }]);
-                            } catch(e) { 
-                                console.error("❌ 插入聊天记录失败（请检查 Supabase RLS 权限）:", e.message); 
-                            }
-                        }
+                // 优先拉入本地后端已经安全存盘的唯一干净记录
+                localChats.forEach(c => {
+                    const key = (c.session_id || '') + '|' + c.role + '|' + String(c.content).trim();
+                    if (!existKeys.has(key)) {
+                        merged.push({ id: c.id, session_id: c.session_id, role: c.role, content: c.content });
+                        existKeys.add(key);
                     }
-                    
-                    renderChatByDate(selectedDate);
-                    renderDateTabs();
-                } else {
-                    // 如果云端空了，将本地全部推送到云端
-                    for (const m of allChatMessages) {
-                        try { await db.from('cozy_chats').insert([{ session_id: m.session_id || currentSessionId, role: m.role, content: m.content }]); } catch(e) { 
-                            console.error("❌ 插入聊天记录失败（请检查 Supabase RLS 权限）:", e.message); 
-                        }
+                });
+                
+                // 补充目前内存和LocalStorage中的独有新消息
+                allChatMessages.forEach(m => {
+                    const key = (m.session_id || '') + '|' + m.role + '|' + String(m.content).trim();
+                    if (!existKeys.has(key)) {
+                        merged.push(m);
+                        existKeys.add(key);
+                    }
+                });
+                
+                merged.sort((a, b) => new Date(a.session_id) - new Date(b.session_id));
+                allChatMessages = merged;
+                saveChats();
+
+                // 3. 将本地独有、未入库的消息安全推送到你的自托管数据库进行持久化保存
+                for (const m of allChatMessages) {
+                    const exists = localChats.some(c => c.session_id === m.session_id && c.role === m.role && String(c.content).trim() === String(m.content).trim());
+                    if (!exists) {
+                        try {
+                            await fetch(`${BACKEND_URL}/api/chats`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ session_id: m.session_id || currentSessionId, role: m.role, content: m.content })
+                            });
+                        } catch(e) { console.error("❌ 插入本地后端失败:", e); }
                     }
                 }
+                
+                renderChatByDate(selectedDate);
+                renderDateTabs();
 
-                const { data: cloudTodos } = await db.from('cozy_todo').select('*').order('created_at', { ascending: true });
-                if (cloudTodos && cloudTodos.length > 0) {
-                    const mergedTodos = [...todoList];
+                // 4. 同步拉取本地代办碎碎念
+                const todoRes = await fetch(`${BACKEND_URL}/api/todos`);
+                const todoData = await todoRes.json();
+                if (todoData.data && todoData.data.length > 0) {
                     const tKeys = new Set(todoList.map(t => String(t.id)));
-                    cloudTodos.forEach(c => { if (!tKeys.has(String(c.id))) { mergedTodos.push({ id: c.id, content: c.content, is_completed: c.is_completed }); tKeys.add(String(c.id)); } });
-                    todoList = mergedTodos; localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); renderTodoUI();
-                }
-
-                const { data: cloudBooks } = await db.from('cozy_books').select('*').order('created_at', { ascending: false });
-                if (cloudBooks && cloudBooks.length > 0) {
-                    const mergedBooks = [...bookList];
-                    const bKeys = new Set(bookList.map(b => String(b.id)));
-                    cloudBooks.forEach(c => { if (!bKeys.has(String(c.id))) { mergedBooks.push({ id: c.id, book_name: c.book_name, author: c.author }); bKeys.add(String(c.id)); } });
-                    bookList = mergedBooks; localStorage.setItem('cozy_local_books', JSON.stringify(bookList)); renderBookUI();
-                }
-
-                const { data: cloudMems } = await db.from('cozy_memories').select('*').order('created_at', { ascending: false });
-                if (cloudMems && cloudMems.length > 0) {
-                    const mergedMems = [...memoryDb];
-                    const mKeys = new Set(memoryDb.map(m => (m.date || '') + '|' + (m.memory || '')));
-                    cloudMems.forEach(c => {
-                        const key = (c.memory_date || '') + '|' + (c.memory || '');
-                        if (!mKeys.has(key)) { mergedMems.push({ date: c.memory_date, memory: c.memory, emotion: c.emotion, state: c.state, folder: c.folder }); mKeys.add(key); }
+                    todoData.data.forEach(c => {
+                        if (!tKeys.has(String(c.id))) { todoList.push({ id: c.id, content: c.content, is_completed: c.is_completed }); tKeys.add(String(c.id)); }
                     });
-                    memoryDb = mergedMems; localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
+                    localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); renderTodoUI();
                 }
-            } catch (e) { console.warn("Background sync error, safe local-first policy active.", e); }
+
+                // 5. 同步拉取听书手札
+                const bookRes = await fetch(`${BACKEND_URL}/api/books`);
+                const bookData = await bookRes.json();
+                if (bookData.data && bookData.data.length > 0) {
+                    const bKeys = new Set(bookList.map(b => String(b.id)));
+                    bookData.data.forEach(c => {
+                        if (!bKeys.has(String(c.id))) { bookList.push({ id: c.id, book_name: c.book_name, author: c.author }); bKeys.add(String(c.id)); }
+                    });
+                    localStorage.setItem('cozy_local_books', JSON.stringify(bookList)); renderBookUI();
+                }
+
+                // 6. 同步拉取归档记忆
+                const memRes = await fetch(`${BACKEND_URL}/api/memories`);
+                const memData = await memRes.json();
+                if (memData.data && memData.data.length > 0) {
+                    const mKeys = new Set(memoryDb.map(m => (m.date || '') + '|' + (m.memory || '')));
+                    memData.data.forEach(c => {
+                        const key = (c.memory_date || '') + '|' + (c.memory || '');
+                        if (!mKeys.has(key)) { memoryDb.push({ date: c.memory_date, memory: c.memory, emotion: c.emotion, state: c.state, folder: c.folder }); mKeys.add(key); }
+                    });
+                    localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
+                }
+            } catch (e) { console.warn("自托管网络连接断开，正开启极速本地离线模式保护您的体验。", e); }
         }
 
         function renderDateTabs() {
@@ -833,9 +790,15 @@
             const container = document.getElementById('chatMessages');
             container.scrollTop = container.scrollHeight;
 
-            if (dbConnected && db) { 
-                try { await db.from('cozy_chats').insert([userMsg]); } 
-                catch(e) { console.error("❌ 发送用户消息失败（请检查 Supabase RLS 权限）:", e.message); }
+            if (dbConnected) { 
+                try { 
+                    await fetch(`${BACKEND_URL}/api/chats`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(userMsg)
+                    });
+                } 
+                catch(e) { console.error("❌ 发送用户消息失败:", e); }
             }
 
             const todayChats = allChatMessages.filter(msg => msg.session_id === currentSessionId);
@@ -988,9 +951,15 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
 
                 container.scrollTop = container.scrollHeight;
 
-                if (dbConnected && db) { 
-                    try { await db.from('cozy_chats').insert([aiMsg]); } 
-                    catch(e) { console.error("❌ 发送AI回复失败（请检查 Supabase RLS 权限）:", e.message); }
+                if (dbConnected) { 
+                    try { 
+                        await fetch(`${BACKEND_URL}/api/chats`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(aiMsg)
+                        });
+                    } 
+                    catch(e) { console.error("❌ 发送AI回复失败:", e); }
                 }
 
             } catch (err) {
@@ -1045,9 +1014,14 @@ ${formattedHistoryText}
 
                 jsonMem.date = currentSessionId;
                 memoryDb.unshift(jsonMem); localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
-                if (dbConnected && db) { 
-                    try { await db.from('cozy_memories').insert([{ memory_date: jsonMem.date, folder: `${currentSessionId} 手记`, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state }]); } 
-                    catch(e) { console.error("❌ 保存记忆卡片失败（请检查 Supabase RLS 权限）:", e.message); }
+                if (dbConnected) { 
+                    try { 
+                        await fetch(`${BACKEND_URL}/api/memories`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ memory_date: jsonMem.date, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state })
+                        });
+                    } catch(e) { console.error("❌ 保存记忆失败:", e); }
                 }
                 localStorage.setItem(extractKey, "done");
                 if (!silent) alert("小千已经把今天的温度和心事，存入记忆库并备份至云端啦！");
@@ -1090,9 +1064,14 @@ ${formattedHistoryText}
                     if (jsonMem) {
                         jsonMem.date = yesterdaySessionId;
                         memoryDb.unshift(jsonMem); localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
-                        if (dbConnected && db) { 
-                            try { await db.from('cozy_memories').insert([{ memory_date: jsonMem.date, folder: `${yesterdaySessionId} 手记`, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state }]); } 
-                            catch(e) { console.error("❌ 自动归档记忆失败（请检查 Supabase RLS 权限）:", e.message); }
+                        if (dbConnected) { 
+                            try { 
+                                await fetch(`${BACKEND_URL}/api/memories`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ memory_date: jsonMem.date, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state })
+                                });
+                            } catch(e) { console.error("❌ 自动归档记忆失败:", e); }
                         }
                     }
                     localStorage.setItem(extractKey, "done");
@@ -1148,7 +1127,15 @@ ${formattedHistoryText}
             todoList.push(tempItem); 
             localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); 
             renderTodoUI(); 
-            if (dbConnected && db) { try { await db.from('cozy_todo').insert([{ id: tempItem.id, content: text, is_completed: false }]); } catch(e) {} } 
+            if (dbConnected) { 
+                try { 
+                    await fetch(`${BACKEND_URL}/api/todos`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(tempItem)
+                    });
+                } catch(e) {} 
+            } 
         }
 
         // 勾选备忘录（自动删除）
@@ -1165,14 +1152,24 @@ ${formattedHistoryText}
                     localStorage.setItem('cozy_local_todos', JSON.stringify(todoList));
                     renderTodoUI();
                     
-                    // 从云端移除
-                    if (dbConnected && db) {
-                        try { await db.from('cozy_todo').delete().eq('id', id); } catch(e) {}
+                    // 从本地后端移除
+                    if (dbConnected) {
+                        try { 
+                            await fetch(`${BACKEND_URL}/api/todos/${id}`, { method: 'DELETE' }); 
+                        } catch(e) {}
                     }
                 }, 1000); // 1秒后自动消失
             } else {
-                // 如果取消勾选（正常不会发生），更新云端
-                if (dbConnected && db) { try { await db.from('cozy_todo').update({ is_completed: isChecked }).eq('id', id); } catch(e) {} }
+                // 如果取消勾选（正常不会发生），更新本地后端
+                if (dbConnected) { 
+                    try { 
+                        await fetch(`${BACKEND_URL}/api/todos`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id, is_completed: isChecked })
+                        });
+                    } catch(e) {} 
+                }
             }
         }
 
@@ -1182,8 +1179,10 @@ ${formattedHistoryText}
             todoList = todoList.filter(item => item.id !== id);
             localStorage.setItem('cozy_local_todos', JSON.stringify(todoList));
             renderTodoUI();
-            if (dbConnected && db) {
-                try { await db.from('cozy_todo').delete().eq('id', id); } catch(e) {}
+            if (dbConnected) {
+                try { 
+                    await fetch(`${BACKEND_URL}/api/todos/${id}`, { method: 'DELETE' }); 
+                } catch(e) {}
             }
         }
 
@@ -1211,7 +1210,15 @@ ${formattedHistoryText}
             bookList.push(tempBook); 
             localStorage.setItem('cozy_local_books', JSON.stringify(bookList)); 
             renderBookUI(); 
-            if (dbConnected && db) { try { await db.from('cozy_books').insert([{ id: tempBook.id, book_name: name, author: author, reading_time: "未记录" }]); } catch(e) {} } 
+            if (dbConnected) { 
+                try { 
+                    await fetch(`${BACKEND_URL}/api/books`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(tempBook)
+                    });
+                } catch(e) {} 
+            } 
         }
 
         // 渲染消息（支持 Markdown 代码高亮与一键复制）
