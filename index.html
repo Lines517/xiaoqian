@@ -363,8 +363,9 @@
         const SUPABASE_URL = "https://kejcaijcqlfmtlfxktrk.supabase.co";
         const SUPABASE_KEY = "sb_publishable_xa16IttRP-xHQdHSiDNCsA_3dOlQutU";
         
-        // 自动识别当前的网页运行环境：无论是本地、还是通过穿透网址访问，都动态绑定当前的自托管后端
-        const BACKEND_URL = window.location.origin;
+        const API_URL = "https://shufulei.net/v1/chat/completions"; 
+        const API_KEY = "fHHaJSoscSQPLyygDFWvE9SvoM7CN3Z3i1BpbTiMwNTtbjx0"; 
+        const API_MODEL = "[企业cli-0.01]gemini-3.5-flash"; 
         // =======================================================
 
         const cdnList = [
@@ -423,10 +424,26 @@
 
         async function autoHealConnection() {
             const statusLabel = document.getElementById('dbStatus');
-            statusLabel.innerText = "🏠 本地硬盘";
-            statusLabel.style.color = "#1B3B2B";
-            dbConnected = true;
-            return true;
+            if (location.protocol === 'file:') {
+                statusLabel.innerText = "🍃 本地保护";
+                statusLabel.style.color = "#8F9E8B";
+                return false;
+            }
+            for (let url of cdnList) {
+                try {
+                    await loadScript(url);
+                    if (typeof supabase !== 'undefined') {
+                        db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                        dbConnected = true;
+                        statusLabel.innerText = "☁️ 云端同步";
+                        statusLabel.style.color = "#1B3B2B";
+                        return true;
+                    }
+                } catch (e) { console.warn("CDN load failed: " + url); }
+            }
+            statusLabel.innerText = "🍃 本地保护";
+            statusLabel.style.color = "#8F9E8B";
+            return false;
         }
 
         function getCozySessionId(dateObj = new Date()) {
@@ -638,90 +655,115 @@
 
         // ================= 【3. 云端同步：永久备份与旧数据修复】 =================
         async function syncWithCloud() {
-            // 在自托管模式下，我们直接向你本地的 Express 后端同步数据
+            if (!dbConnected || !db) return;
             try {
-                // 1. 从本地后端数据库拉取已存的所有聊天记录
-                const res = await fetch(`${BACKEND_URL}/api/chats`);
-                const localData = await res.json();
-                const localChats = localData.data || [];
+                const { data: cloudChats } = await db.from('cozy_chats').select('*').order('created_at', { ascending: true });
+                
+                if (cloudChats && cloudChats.length > 0) {
+                    // 去除云端中内容和session_id完全重复的无用垃圾数据（保留第一条）
+                    const seenCloudKeys = new Set();
+                    const uniqueCloudChats = [];
+                    cloudChats.forEach(c => {
+                        let sid = c.session_id;
+                        if (!sid || sid === 'undefined') {
+                            const createdDate = c.created_at ? new Date(c.created_at) : new Date();
+                            const yyyy = createdDate.getFullYear();
+                            const mm = String(createdDate.getMonth() + 1).padStart(2, '0');
+                            const dd = String(createdDate.getDate()).padStart(2, '0');
+                            sid = `${yyyy}-${mm}-${dd}`;
+                        }
+                        sid = sid.replace(/\//g, '-');
+                        const dateMatch = sid.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+                        if (dateMatch) {
+                            sid = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`;
+                        }
+                        
+                        const key = sid + '|' + c.role + '|' + String(c.content).trim();
+                        if (!seenCloudKeys.has(key)) {
+                            seenCloudKeys.add(key);
+                            uniqueCloudChats.push({ ...c, session_id: sid, content: String(c.content) });
+                        } else {
+                            // 自动静默清理云端的重复冗余垃圾记录，防止多次保存污染
+                            db.from('cozy_chats').delete().eq('id', c.id).then(() => {});
+                        }
+                    });
 
-                // 2. 双向去重合并
-                const merged = [];
-                const existKeys = new Set();
-                
-                // 优先拉入本地后端已经安全存盘的唯一干净记录
-                localChats.forEach(c => {
-                    const key = (c.session_id || '') + '|' + c.role + '|' + String(c.content).trim();
-                    if (!existKeys.has(key)) {
-                        merged.push({ id: c.id, session_id: c.session_id, role: c.role, content: c.content });
-                        existKeys.add(key);
-                    }
-                });
-                
-                // 补充目前内存和LocalStorage中的独有新消息
-                allChatMessages.forEach(m => {
-                    const key = (m.session_id || '') + '|' + m.role + '|' + String(m.content).trim();
-                    if (!existKeys.has(key)) {
-                        merged.push(m);
-                        existKeys.add(key);
-                    }
-                });
-                
-                merged.sort((a, b) => new Date(a.session_id) - new Date(b.session_id));
-                allChatMessages = merged;
-                saveChats();
+                    // 1. 本地和云端进行强双向合并，绝不覆盖已有历史记录
+                    const merged = [];
+                    const existKeys = new Set();
+                    
+                    // 优先拉入云端唯一干净记录
+                    uniqueCloudChats.forEach(c => {
+                        const key = (c.session_id || '') + '|' + c.role + '|' + String(c.content).trim();
+                        if (!existKeys.has(key)) {
+                            merged.push({ session_id: c.session_id, role: c.role, content: c.content });
+                            existKeys.add(key);
+                        }
+                    });
+                    
+                    // 补充本地独有记录
+                    allChatMessages.forEach(m => {
+                        const key = (m.session_id || '') + '|' + m.role + '|' + String(m.content).trim();
+                        if (!existKeys.has(key)) {
+                            merged.push(m);
+                            existKeys.add(key);
+                        }
+                    });
+                    
+                    merged.sort((a, b) => new Date(a.session_id) - new Date(b.session_id));
+                    allChatMessages = merged;
+                    saveChats();
 
-                // 3. 将本地独有、未入库的消息安全推送到你的自托管数据库进行持久化保存
-                for (const m of allChatMessages) {
-                    const exists = localChats.some(c => c.session_id === m.session_id && c.role === m.role && String(c.content).trim() === String(m.content).trim());
-                    if (!exists) {
-                        try {
-                            await fetch(`${BACKEND_URL}/api/chats`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ session_id: m.session_id || currentSessionId, role: m.role, content: m.content })
-                            });
-                        } catch(e) { console.error("❌ 插入本地后端失败:", e); }
+                    // 2. 将本地独有、未备份的消息推送到云端Supabase（严格防止重复）
+                    for (const m of allChatMessages) {
+                        const exists = uniqueCloudChats.some(c => c.session_id === m.session_id && c.role === m.role && String(c.content).trim() === String(m.content).trim());
+                        if (!exists) {
+                            try {
+                                await db.from('cozy_chats').insert([{ session_id: m.session_id || currentSessionId, role: m.role, content: m.content }]);
+                            } catch(e) { 
+                                console.error("❌ 插入聊天记录失败（请检查 Supabase RLS 权限）:", e.message); 
+                            }
+                        }
+                    }
+                    
+                    renderChatByDate(selectedDate);
+                    renderDateTabs();
+                } else {
+                    // 如果云端空了，将本地全部推送到云端
+                    for (const m of allChatMessages) {
+                        try { await db.from('cozy_chats').insert([{ session_id: m.session_id || currentSessionId, role: m.role, content: m.content }]); } catch(e) { 
+                            console.error("❌ 插入聊天记录失败（请检查 Supabase RLS 权限）:", e.message); 
+                        }
                     }
                 }
-                
-                renderChatByDate(selectedDate);
-                renderDateTabs();
 
-                // 4. 同步拉取本地代办碎碎念
-                const todoRes = await fetch(`${BACKEND_URL}/api/todos`);
-                const todoData = await todoRes.json();
-                if (todoData.data && todoData.data.length > 0) {
+                const { data: cloudTodos } = await db.from('cozy_todo').select('*').order('created_at', { ascending: true });
+                if (cloudTodos && cloudTodos.length > 0) {
+                    const mergedTodos = [...todoList];
                     const tKeys = new Set(todoList.map(t => String(t.id)));
-                    todoData.data.forEach(c => {
-                        if (!tKeys.has(String(c.id))) { todoList.push({ id: c.id, content: c.content, is_completed: c.is_completed }); tKeys.add(String(c.id)); }
-                    });
-                    localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); renderTodoUI();
+                    cloudTodos.forEach(c => { if (!tKeys.has(String(c.id))) { mergedTodos.push({ id: c.id, content: c.content, is_completed: c.is_completed }); tKeys.add(String(c.id)); } });
+                    todoList = mergedTodos; localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); renderTodoUI();
                 }
 
-                // 5. 同步拉取听书手札
-                const bookRes = await fetch(`${BACKEND_URL}/api/books`);
-                const bookData = await bookRes.json();
-                if (bookData.data && bookData.data.length > 0) {
+                const { data: cloudBooks } = await db.from('cozy_books').select('*').order('created_at', { ascending: false });
+                if (cloudBooks && cloudBooks.length > 0) {
+                    const mergedBooks = [...bookList];
                     const bKeys = new Set(bookList.map(b => String(b.id)));
-                    bookData.data.forEach(c => {
-                        if (!bKeys.has(String(c.id))) { bookList.push({ id: c.id, book_name: c.book_name, author: c.author }); bKeys.add(String(c.id)); }
-                    });
-                    localStorage.setItem('cozy_local_books', JSON.stringify(bookList)); renderBookUI();
+                    cloudBooks.forEach(c => { if (!bKeys.has(String(c.id))) { mergedBooks.push({ id: c.id, book_name: c.book_name, author: c.author }); bKeys.add(String(c.id)); } });
+                    bookList = mergedBooks; localStorage.setItem('cozy_local_books', JSON.stringify(bookList)); renderBookUI();
                 }
 
-                // 6. 同步拉取归档记忆
-                const memRes = await fetch(`${BACKEND_URL}/api/memories`);
-                const memData = await memRes.json();
-                if (memData.data && memData.data.length > 0) {
+                const { data: cloudMems } = await db.from('cozy_memories').select('*').order('created_at', { ascending: false });
+                if (cloudMems && cloudMems.length > 0) {
+                    const mergedMems = [...memoryDb];
                     const mKeys = new Set(memoryDb.map(m => (m.date || '') + '|' + (m.memory || '')));
-                    memData.data.forEach(c => {
+                    cloudMems.forEach(c => {
                         const key = (c.memory_date || '') + '|' + (c.memory || '');
-                        if (!mKeys.has(key)) { memoryDb.push({ date: c.memory_date, memory: c.memory, emotion: c.emotion, state: c.state, folder: c.folder }); mKeys.add(key); }
+                        if (!mKeys.has(key)) { mergedMems.push({ date: c.memory_date, memory: c.memory, emotion: c.emotion, state: c.state, folder: c.folder }); mKeys.add(key); }
                     });
-                    localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
+                    memoryDb = mergedMems; localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
                 }
-            } catch (e) { console.warn("自托管网络连接断开，正开启极速本地离线模式保护您的体验。", e); }
+            } catch (e) { console.warn("Background sync error, safe local-first policy active.", e); }
         }
 
         function renderDateTabs() {
@@ -790,15 +832,9 @@
             const container = document.getElementById('chatMessages');
             container.scrollTop = container.scrollHeight;
 
-            if (dbConnected) { 
-                try { 
-                    await fetch(`${BACKEND_URL}/api/chats`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(userMsg)
-                    });
-                } 
-                catch(e) { console.error("❌ 发送用户消息失败:", e); }
+            if (dbConnected && db) { 
+                try { await db.from('cozy_chats').insert([userMsg]); } 
+                catch(e) { console.error("❌ 发送用户消息失败（请检查 Supabase RLS 权限）:", e.message); }
             }
 
             const todayChats = allChatMessages.filter(msg => msg.session_id === currentSessionId);
@@ -851,6 +887,13 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
 
             // 网页通过 SSE 打字机流式通道建立与新后端的连接
             try {
+                // 如果后端在线，使用打字机流式输出；如果本地直接打开运行，则平滑降级为普通API一问一答
+                let useLocalBackend = false;
+                try {
+                    const checkRes = await fetch("http://localhost:3000/health");
+                    if (checkRes.ok) useLocalBackend = true;
+                } catch(e) {}
+
                 // 在气泡区先建立一个空的AI小千回复气泡，用来承载实时打字机吐字
                 const aiBubbleRow = document.createElement('div');
                 aiBubbleRow.className = "message-row assistant";
@@ -860,74 +903,100 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
                 
                 const aiBubbleTextEl = aiBubbleRow.querySelector('.message-bubble');
 
-                const response = await fetch(`${BACKEND_URL}/api/chat`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ messages: completeMessages })
-                });
+                if (useLocalBackend) {
+                    const response = await fetch("http://localhost:3000/api/chat", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ messages: completeMessages })
+                    });
 
-                if (!response.ok) {
-                    throw new Error("后端连接失败");
-                }
+                    if (!response.ok) {
+                        throw new Error("后端连接失败");
+                    }
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder('utf-8');
-                let fullReplyText = "";
-                let buffer = "";
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder('utf-8');
+                    let fullReplyText = "";
+                    let buffer = "";
 
-                aiBubbleTextEl.classList.remove('typing-glow');
-                aiBubbleTextEl.innerHTML = "";
+                    aiBubbleTextEl.classList.remove('typing-glow');
+                    aiBubbleTextEl.innerHTML = "";
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
 
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop(); // 保留不完整的一行在缓冲区
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop(); // 保留不完整的一行在缓冲区
 
-                    for (let line of lines) {
-                        line = line.trim();
-                        if (!line || !line.startsWith('data:')) continue;
-                        const dataStr = line.substring(5).trim();
-                        if (dataStr === '[DONE]') continue;
+                        for (let line of lines) {
+                            line = line.trim();
+                            if (!line || !line.startsWith('data:')) continue;
+                            const dataStr = line.substring(5).trim();
+                            if (dataStr === '[DONE]') continue;
 
-                        try {
-                            const parsed = JSON.parse(dataStr);
-                            if (parsed.error) {
-                                throw new Error(parsed.error);
-                            }
-                            
-                            // 从Gemini API/OpenAI API 的 SSE 结构提取文本块
-                            if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
-                                const chunk = parsed.choices[0].delta.content;
-                                fullReplyText += chunk;
-                                // 实时通过 Marked.js 渲染打字机文字，让加粗、高亮、换行平滑出来
-                                try {
-                                    aiBubbleTextEl.innerHTML = marked.parse(fullReplyText);
-                                } catch (me) {
-                                    aiBubbleTextEl.innerHTML = fullReplyText.replace(/\n/g, '<br>');
+                            try {
+                                const parsed = JSON.parse(dataStr);
+                                if (parsed.error) {
+                                    throw new Error(parsed.error);
                                 }
-                                container.scrollTop = container.scrollHeight;
+                                
+                                // 从Gemini API/OpenAI API 的 SSE 结构提取文本块
+                                if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
+                                    const chunk = parsed.choices[0].delta.content;
+                                    fullReplyText += chunk;
+                                    // 实时通过 Marked.js 渲染打字机文字，让加粗、高亮、换行平滑出来
+                                    try {
+                                        aiBubbleTextEl.innerHTML = marked.parse(fullReplyText);
+                                    } catch (me) {
+                                        aiBubbleTextEl.innerHTML = fullReplyText.replace(/\n/g, '<br>');
+                                    }
+                                    container.scrollTop = container.scrollHeight;
+                                }
+                            } catch (e) {
+                                console.warn("解析流式区块数据失败:", e);
                             }
-                        } catch (e) {
-                            console.warn("解析流式区块数据失败:", e);
                         }
                     }
+
+                    // 最终结束传输，补全代码块高亮与复制按钮等UI渲染
+                    const finalReply = fullReplyText.trim();
+                    if (!finalReply) {
+                        throw new Error("收到空白回复");
+                    }
+
+                    const aiMsg = { session_id: currentSessionId, role: "assistant", content: finalReply };
+                    allChatMessages.push(aiMsg);
+                    saveChats();
+
+                    // 重新对这最后一条消息精细润色排版
+                    aiBubbleTextEl.innerHTML = marked.parse(finalReply);
+                } else {
+                    // 平滑降级：无缝切换为 Netlify 或静态端直连的普通一问一答，省去任何配置成本！
+                    const response = await fetch(API_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                        body: JSON.stringify({ model: API_MODEL, messages: completeMessages })
+                    });
+
+                    const resData = await response.json();
+                    if (resData.error) {
+                        if (resData.error.message && (resData.error.message.includes("余额不足") || resData.error.message.includes("学分") || resData.error.message.includes("Quota") || resData.error.message.includes("credit"))) {
+                            throw new Error("小千的脑力值（学分）不足啦，请联系主人给小千充值哦～");
+                        }
+                        throw new Error(resData.error.message);
+                    }
+                    const reply = resData.choices[0].message.content.trim();
+
+                    const aiMsg = { session_id: currentSessionId, role: "assistant", content: reply };
+                    allChatMessages.push(aiMsg);
+                    saveChats();
+
+                    aiBubbleTextEl.classList.remove('typing-glow');
+                    aiBubbleTextEl.innerHTML = marked.parse(reply);
                 }
 
-                // 最终结束传输，补全代码块高亮与复制按钮等UI渲染
-                const finalReply = fullReplyText.trim();
-                if (!finalReply) {
-                    throw new Error("收到空白回复");
-                }
-
-                const aiMsg = { session_id: currentSessionId, role: "assistant", content: finalReply };
-                allChatMessages.push(aiMsg);
-                saveChats();
-
-                // 重新对这最后一条消息精细润色排版
-                aiBubbleTextEl.innerHTML = marked.parse(finalReply);
                 // 对新生成的代码块进行渲染和高亮
                 aiBubbleTextEl.querySelectorAll('pre').forEach(pre => {
                     const copyBtn = document.createElement('button');
@@ -951,15 +1020,10 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
 
                 container.scrollTop = container.scrollHeight;
 
-                if (dbConnected) { 
-                    try { 
-                        await fetch(`${BACKEND_URL}/api/chats`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(aiMsg)
-                        });
-                    } 
-                    catch(e) { console.error("❌ 发送AI回复失败:", e); }
+                const lastAiMsg = allChatMessages[allChatMessages.length - 1];
+                if (dbConnected && db) { 
+                    try { await db.from('cozy_chats').insert([lastAiMsg]); } 
+                    catch(e) { console.error("❌ 发送AI回复失败（请检查 Supabase RLS 权限）:", e.message); }
                 }
 
             } catch (err) {
@@ -1014,14 +1078,9 @@ ${formattedHistoryText}
 
                 jsonMem.date = currentSessionId;
                 memoryDb.unshift(jsonMem); localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
-                if (dbConnected) { 
-                    try { 
-                        await fetch(`${BACKEND_URL}/api/memories`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ memory_date: jsonMem.date, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state })
-                        });
-                    } catch(e) { console.error("❌ 保存记忆失败:", e); }
+                if (dbConnected && db) { 
+                    try { await db.from('cozy_memories').insert([{ memory_date: jsonMem.date, folder: `${currentSessionId} 手记`, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state }]); } 
+                    catch(e) { console.error("❌ 保存记忆卡片失败（请检查 Supabase RLS 权限）:", e.message); }
                 }
                 localStorage.setItem(extractKey, "done");
                 if (!silent) alert("小千已经把今天的温度和心事，存入记忆库并备份至云端啦！");
@@ -1064,14 +1123,9 @@ ${formattedHistoryText}
                     if (jsonMem) {
                         jsonMem.date = yesterdaySessionId;
                         memoryDb.unshift(jsonMem); localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
-                        if (dbConnected) { 
-                            try { 
-                                await fetch(`${BACKEND_URL}/api/memories`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ memory_date: jsonMem.date, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state })
-                                });
-                            } catch(e) { console.error("❌ 自动归档记忆失败:", e); }
+                        if (dbConnected && db) { 
+                            try { await db.from('cozy_memories').insert([{ memory_date: jsonMem.date, folder: `${yesterdaySessionId} 手记`, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state }]); } 
+                            catch(e) { console.error("❌ 自动归档记忆失败（请检查 Supabase RLS 权限）:", e.message); }
                         }
                     }
                     localStorage.setItem(extractKey, "done");
@@ -1127,15 +1181,7 @@ ${formattedHistoryText}
             todoList.push(tempItem); 
             localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); 
             renderTodoUI(); 
-            if (dbConnected) { 
-                try { 
-                    await fetch(`${BACKEND_URL}/api/todos`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(tempItem)
-                    });
-                } catch(e) {} 
-            } 
+            if (dbConnected && db) { try { await db.from('cozy_todo').insert([{ id: tempItem.id, content: text, is_completed: false }]); } catch(e) {} } 
         }
 
         // 勾选备忘录（自动删除）
@@ -1152,24 +1198,14 @@ ${formattedHistoryText}
                     localStorage.setItem('cozy_local_todos', JSON.stringify(todoList));
                     renderTodoUI();
                     
-                    // 从本地后端移除
-                    if (dbConnected) {
-                        try { 
-                            await fetch(`${BACKEND_URL}/api/todos/${id}`, { method: 'DELETE' }); 
-                        } catch(e) {}
+                    // 从云端移除
+                    if (dbConnected && db) {
+                        try { await db.from('cozy_todo').delete().eq('id', id); } catch(e) {}
                     }
                 }, 1000); // 1秒后自动消失
             } else {
-                // 如果取消勾选（正常不会发生），更新本地后端
-                if (dbConnected) { 
-                    try { 
-                        await fetch(`${BACKEND_URL}/api/todos`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id, is_completed: isChecked })
-                        });
-                    } catch(e) {} 
-                }
+                // 如果取消勾选（正常不会发生），更新云端
+                if (dbConnected && db) { try { await db.from('cozy_todo').update({ is_completed: isChecked }).eq('id', id); } catch(e) {} }
             }
         }
 
@@ -1179,10 +1215,8 @@ ${formattedHistoryText}
             todoList = todoList.filter(item => item.id !== id);
             localStorage.setItem('cozy_local_todos', JSON.stringify(todoList));
             renderTodoUI();
-            if (dbConnected) {
-                try { 
-                    await fetch(`${BACKEND_URL}/api/todos/${id}`, { method: 'DELETE' }); 
-                } catch(e) {}
+            if (dbConnected && db) {
+                try { await db.from('cozy_todo').delete().eq('id', id); } catch(e) {}
             }
         }
 
@@ -1210,15 +1244,7 @@ ${formattedHistoryText}
             bookList.push(tempBook); 
             localStorage.setItem('cozy_local_books', JSON.stringify(bookList)); 
             renderBookUI(); 
-            if (dbConnected) { 
-                try { 
-                    await fetch(`${BACKEND_URL}/api/books`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(tempBook)
-                    });
-                } catch(e) {} 
-            } 
+            if (dbConnected && db) { try { await db.from('cozy_books').insert([{ id: tempBook.id, book_name: name, author: author, reading_time: "未记录" }]); } catch(e) {} } 
         }
 
         // 渲染消息（支持 Markdown 代码高亮与一键复制）
