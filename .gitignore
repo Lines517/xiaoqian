@@ -1,0 +1,5 @@
+# 过滤掉本地个人钥匙箱，决不上传泄露！
+node_modules/
+.env
+.DS_Store
+Thumbs.db

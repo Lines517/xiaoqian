@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>一盏小灯</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #F5F2EB;
+            --text-color: #1B3B2B;
+            --primary-color: #8F9E8B;
+            --primary-light: rgba(143, 158, 139, 0.15);
+            --lamp-glow: rgba(253, 184, 19, 0.4);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        /* 外部大背景（模拟桌面） */
+        body {
+            background-color: #2c2c2c;
+            background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0);
+            background-size: 20px 20px;
+            color: var(--text-color);
+            font-family: "Georgia", "Noto Serif SC", "PingFang SC", "Hiragino Sans GB", serif;
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh; padding: 20px;
+            line-height: 1.8; font-size: 16px;
+        }
+
+        /* 📱 手机外壳 */
+        .phone-shell {
+            width: 380px;
+            height: 780px;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(rgba(27, 59, 43, 0.03) 1px, transparent 0);
+            background-size: 24px 24px;
+            border-radius: 40px;
+            border: 12px solid #1a1a1a;
+            box-shadow: 0 0 0 4px #333, 0 20px 50px rgba(0,0,0,0.6);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 📶 顶部状态栏 */
+        .status-bar {
+            height: 35px;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 25px;
+            font-size: 13px; font-family: sans-serif; font-weight: 600;
+            background: transparent;
+            position: absolute; top: 0; width: 100%;
+            z-index: 10; pointer-events: none;
+            color: var(--text-color);
+        }
+
+        /* 📱 主屏幕网格布局 */
+        .home-screen {
+            flex: 1;
+            padding: 60px 20px 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            align-content: start;
+            overflow-y: auto;
+            -ms-overflow-style: none; scrollbar-width: none;
+        }
+        .home-screen::-webkit-scrollbar { display: none; }
+
+        .app-icon {
+            background-color: rgba(143, 158, 139, 0.1);
+            border: 1px solid rgba(27, 59, 43, 0.1);
+            border-radius: 20px;
+            padding: 20px 10px;
+            display: flex; flex-direction: column; align-items: center; gap: 10px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .app-icon:hover { transform: scale(0.98); background-color: rgba(143, 158, 139, 0.2); }
+        .app-icon .icon { font-size: 32px; }
+        .app-icon span { font-size: 13px; opacity: 0.8; font-weight: bold; }
+
+        /* 📱 App 视图页面（默认隐藏） */
+        .app-view {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+            padding: 50px 15px 20px;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(rgba(27, 59, 43, 0.03) 1px, transparent 0);
+            background-size: 24px 24px;
+            z-index: 5;
+            animation: slideIn 0.3s ease-out;
+        }
+        .app-view.active { display: flex; }
+        @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* 搜索框与面板样式 */
+        .search-area {
+            display: flex; gap: 6px; margin-bottom: 10px; align-items: center; position: relative;
+        }
+        .search-input {
+            flex: 1; padding: 6px 12px; font-size: 12px; border-radius: 12px;
+            background-color: rgba(27, 59, 43, 0.03); border: 1px solid rgba(27, 59, 43, 0.1);
+            color: var(--text-color); outline: none; transition: all 0.2s;
+        }
+        .search-input:focus {
+            background-color: transparent; border-color: var(--primary-color);
+        }
+        .search-clear-btn {
+            position: absolute; right: 52px; background: none; border: none; font-size: 14px;
+            cursor: pointer; color: var(--text-color); opacity: 0.4; display: none;
+        }
+        .search-clear-btn.visible { display: block; }
+        .search-btn {
+            background-color: var(--primary-color); color: var(--bg-color); border: none;
+            padding: 6px 12px; border-radius: 12px; font-size: 12px; cursor: pointer;
+        }
+        .search-results-overlay {
+            display: none; flex-direction: column; position: absolute; top: 100px; left: 15px;
+            width: calc(100% - 30px); height: calc(100% - 180px); background: var(--bg-color);
+            z-index: 8; padding: 10px; border-radius: 15px; border: 1px solid rgba(27, 59, 43, 0.15);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15); animation: slideIn 0.2s ease-out;
+        }
+        .search-results-overlay.active { display: flex; }
+        .search-results-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding-bottom: 8px; border-bottom: 1px dashed rgba(27, 59, 43, 0.1); margin-bottom: 8px;
+        }
+        .search-results-list {
+            flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+        }
+        .search-item {
+            background-color: rgba(143, 158, 139, 0.08); border-radius: 10px; padding: 10px;
+            font-size: 13px; cursor: pointer; transition: all 0.2s; border: 1px solid transparent;
+        }
+        .search-item:hover {
+            border-color: var(--primary-color); background-color: rgba(143, 158, 139, 0.15);
+        }
+        .search-item-meta {
+            display: flex; justify-content: space-between; font-size: 11px; opacity: 0.5; margin-bottom: 4px;
+        }
+        .search-item-content {
+            word-break: break-all; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .search-highlight {
+            background-color: rgba(253, 184, 19, 0.3); font-weight: bold; border-radius: 2px; padding: 0 2px;
+        }
+
+        /* App 顶部导航栏 */
+        .app-header {
+            display: flex; align-items: center; gap: 15px;
+            margin-bottom: 15px; padding-bottom: 10px;
+            border-bottom: 1px solid rgba(27, 59, 43, 0.1);
+        }
+        .back-btn {
+            background: none; border: none; font-size: 20px; cursor: pointer;
+            color: var(--text-color); opacity: 0.6; transition: opacity 0.2s;
+        }
+        .back-btn:hover { opacity: 1; }
+        .app-header h2 { font-size: 18px; font-weight: 400; letter-spacing: 2px; }
+
+        /* 聊天 App 内部样式 */
+        .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; padding-right: 5px; margin-bottom: 10px; }
+        .message-row { display: flex; flex-direction: column; max-width: 88%; }
+        .message-row.user { align-self: flex-end; align-items: flex-end; }
+        .message-row.assistant { align-self: flex-start; align-items: flex-start; }
+        .sender-name { font-size: 11px; opacity: 0.5; margin-bottom: 2px; }
+        .message-bubble { padding: 10px 14px; border-radius: 14px; font-size: 14px; word-break: break-all; line-height: 1.6; }
+        .user .message-bubble { background-color: var(--primary-color); color: var(--bg-color); border-top-right-radius: 2px; }
+        .assistant .message-bubble { background-color: rgba(27, 59, 43, 0.05); color: var(--text-color); border-top-left-radius: 2px; }
+
+        .date-tabs-container { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 5px; margin-bottom: 10px; border-bottom: 1px dashed rgba(27, 59, 43, 0.1); -ms-overflow-style: none; scrollbar-width: none; }
+        .date-tabs-container::-webkit-scrollbar { display: none; }
+        .date-tab { background: rgba(143, 158, 139, 0.1); border: 1px solid transparent; color: var(--text-color); padding: 3px 10px; border-radius: 12px; font-size: 11px; cursor: pointer; white-space: nowrap; opacity: 0.7; }
+        .date-tab.active { background: var(--primary-color); color: var(--bg-color); opacity: 1; font-weight: bold; }
+
+        .chat-input-area { display: flex; gap: 8px; width: 100%; align-items: center; position: relative; margin-top: auto; }
+        input[type="text"] { flex: 1; background-color: transparent; border: 1px solid rgba(27, 59, 43, 0.15); color: var(--text-color); padding: 10px 16px; border-radius: 18px; font-size: 14px; outline: none; font-family: inherit; }
+        input[type="text"]::placeholder { color: rgba(27, 59, 43, 0.3); }
+        input[type="text"]:focus { border-color: var(--primary-color); }
+        input[type="text"]:disabled { background-color: rgba(0,0,0,0.03); cursor: not-allowed; }
+        
+        .image-btn { background: none; border: none; cursor: pointer; font-size: 18px; padding: 2px; }
+        .image-btn:disabled { opacity: 0.3; }
+        
+        .image-preview-container { position: absolute; bottom: 55px; left: 0; background: var(--bg-color); border: 1px solid var(--primary-color); padding: 8px; border-radius: 10px; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 10; }
+        .image-preview-container img { max-width: 120px; max-height: 120px; border-radius: 6px; display: block; }
+        .image-preview-container .close-btn { position: absolute; top: -6px; right: -6px; background: #ff4d4f; color: white; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .send-btn { background-color: var(--primary-color); color: var(--bg-color); border: none; padding: 10px 18px; border-radius: 18px; font-size: 13px; cursor: pointer; }
+        .send-btn:disabled { background-color: #BAC2B9; }
+
+        /* 其他 App 内部样式 */
+        .handbook-list { display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+        .book-item { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dotted rgba(27, 59, 43, 0.08); padding-bottom: 4px; }
+        .book-name { font-weight: bold; }
+        .book-author { font-size: 12px; opacity: 0.5; }
+        
+        /* 备忘录样式升级 */
+        .todo-item { display: flex; align-items: center; gap: 8px; font-size: 14px; justify-content: space-between; padding: 4px 0; border-bottom: 1px dotted rgba(27, 59, 43, 0.05); }
+        .todo-item-main { display: flex; align-items: center; gap: 8px; flex: 1; }
+        .todo-item input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--primary-color); cursor: pointer; }
+        .todo-item.completed span { text-decoration: line-through; opacity: 0.5; }
+        .todo-item .delete-btn { background: none; border: none; color: #ff4d4f; font-size: 16px; cursor: pointer; opacity: 0.6; padding: 0 5px; }
+        .todo-item .delete-btn:hover { opacity: 1; }
+        
+        .todo-input-box { display: flex; gap: 6px; width: 100%; margin-top: 10px; }
+        .todo-input-box input { padding: 6px 12px; font-size: 12px; border-radius: 12px; }
+        .todo-add-btn { background-color: var(--primary-color); color: var(--bg-color); border: none; padding: 6px 12px; border-radius: 12px; font-size: 12px; cursor: pointer; }
+
+        .archive-content { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+        .memory-item { background-color: rgba(143, 158, 139, 0.05); border-radius: 8px; padding: 10px 14px; border-left: 3px solid var(--primary-color); }
+        .memory-item div { font-size: 13px; }
+
+        /* 代码块样式与复制按钮 */
+        .message-bubble pre { position: relative; background-color: #282c34; color: #abb2bf; padding: 30px 10px 10px; border-radius: 8px; overflow-x: auto; margin: 10px 0; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; line-height: 1.5; text-align: left; }
+        .message-bubble code { font-family: inherit; }
+        .copy-code-btn { position: absolute; top: 5px; right: 5px; background: var(--primary-color); color: var(--bg-color); border: none; padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: sans-serif; transition: all 0.2s; }
+        .copy-code-btn:hover { background: #798C75; }
+
+        /* 呼吸流光效果，用于打字等待 */
+        @keyframes typingGlow {
+            0% { background-color: rgba(27, 59, 43, 0.05); }
+            50% { background-color: rgba(143, 158, 139, 0.2); }
+            100% { background-color: rgba(27, 59, 43, 0.05); }
+        }
+        .typing-glow {
+            animation: typingGlow 1.5s infinite ease-in-out;
+            min-width: 40px;
+            text-align: center;
+        }
+
+        /* 首页微调 */
+        .home-lamp { grid-column: span 2; display: flex; flex-direction: column; align-items: center; margin-bottom: 10px; }
+        h1 { font-size: 20px; font-weight: 400; letter-spacing: 4px; margin-bottom: 5px; text-align: center; }
+        .intro-text { font-size: 12px; text-align: center; color: rgba(27, 59, 43, 0.6); margin-top: 5px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+    <!-- 📱 手机外壳容器 -->
+    <div class="phone-shell">
+        <!-- 顶部状态栏 -->
+        <div class="status-bar">
+            <span id="statusTime">10:35</span>
+            <span>📶 📶 🔋 100%</span>
+        </div>
+
+        <!-- 🏠 主屏幕（App 图标网格） -->
+        <div class="home-screen" id="homeScreen">
+            <div class="home-lamp">
+                <div style="position:relative; width:80px; height:80px; margin:0 auto; display:flex; justify-content:center;">
+                    <div class="lamp-glow" style="top:20px; width:60px; height:60px;"></div>
+                    <div class="pixel-lamp" style="width:40px; height:50px;">
+                        <div class="lamp-shade" style="width:30px; height:15px; border-radius:15px 15px 5px 5px;"></div>
+                        <div class="lamp-bulb" style="width:8px; height:8px; bottom:-4px; left:11px;"></div>
+                        <div class="lamp-pole" style="width:4px; height:20px;"></div>
+                        <div class="lamp-base" style="width:25px; height:6px; margin-top:-1px;"></div>
+                    </div>
+                </div>
+                <h1>林间一盏灯</h1>
+                <p class="intro-text">纸页微微发暖，像刚被阳光走过的燕麦田。</p>
+            </div>
+
+            <div class="app-icon" onclick="openApp('chat')">
+                <span class="icon">💬</span>
+                <span>灯下闲谈</span>
+            </div>
+            <div class="app-icon" onclick="openApp('todo')">
+                <span class="icon">📝</span>
+                <span>碎碎念</span>
+            </div>
+            <div class="app-icon" onclick="openApp('books')">
+                <span class="icon">📖</span>
+                <span>听书手札</span>
+            </div>
+            <div class="app-icon" onclick="openApp('memory')">
+                <span class="icon">🧠</span>
+                <span>庇护所记忆</span>
+            </div>
+        </div>
+
+        <!-- 💬 App 1：聊天 -->
+        <div class="app-view" id="view-chat">
+            <div class="app-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>灯下闲谈</h2>
+                <div class="db-status" id="dbStatus" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(27,59,43,0.05); opacity:0.8;">加载中...</div>
+                <button type="button" class="header-btn" onclick="triggerMemoryConsolidation(false)" style="margin-left:10px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.6;">整理记忆</button>
+            </div>
+            
+            <!-- 🔍 微信同款历史聊天记录搜索框 -->
+            <div class="search-area">
+                <input type="text" id="searchInput" class="search-input" placeholder="🔍 搜索历史聊天内容..." oninput="toggleSearchClearBtn(this.value)">
+                <button class="search-clear-btn" id="searchClearBtn" onclick="clearSearchInput()">×</button>
+                <button class="search-btn" onclick="searchChatHistory()">搜索</button>
+            </div>
+
+            <!-- 📱 搜索结果覆盖面板 -->
+            <div class="search-results-overlay" id="searchResultsOverlay">
+                <div class="search-results-header">
+                    <span style="font-size:12px; font-weight:bold; opacity:0.8;" id="searchResultCount">找到 0 条记录</span>
+                    <button class="back-btn" onclick="closeSearchPanel()" style="font-size:16px;">关闭 ×</button>
+                </div>
+                <div class="search-results-list" id="searchResultsList"></div>
+            </div>
+            
+            <div class="date-tabs-container" id="dateTabs"></div>
+            <div class="chat-messages" id="chatMessages"></div>
+
+            <form id="chatForm" onsubmit="event.preventDefault(); sendMessage(); return false;" class="chat-input-area">
+                <button type="button" class="image-btn" id="imageBtn" onclick="document.getElementById('imageInput').click()">📷</button>
+                <input type="file" id="imageInput" accept="image/*" style="display: none;" onchange="handleImageSelect(event)">
+                <input type="text" id="userInput" placeholder="写给小千......" autocomplete="off">
+                <button type="submit" class="send-btn" id="sendBtn">发送</button>
+                <div class="image-preview-container" id="imagePreviewContainer">
+                    <button class="close-btn" onclick="clearImagePreview()">×</button>
+                    <img id="imagePreview" src="" alt="预览">
+                </div>
+            </form>
+        </div>
+
+        <!-- 📝 App 2：备忘录 -->
+        <div class="app-view" id="view-todo">
+            <div class="app-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>碎碎念</h2>
+            </div>
+            <div class="handbook-list" id="todoListContainer" style="flex:1; overflow-y:auto;"></div>
+            <div class="todo-input-box">
+                <input type="text" id="todoInput" placeholder="加一条..." autocomplete="off">
+                <button type="button" class="todo-add-btn" onclick="addTodoItem()">加</button>
+            </div>
+        </div>
+
+        <!-- 📖 App 3：听书手札 -->
+        <div class="app-view" id="view-books">
+            <div class="app-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>听书手札</h2>
+            </div>
+            <div class="handbook-list" id="bookListContainer" style="flex:1; overflow-y:auto;"></div>
+            <div class="todo-input-box">
+                <input type="text" id="bookInput" placeholder="书名/作者..." autocomplete="off">
+                <button type="button" class="todo-add-btn" onclick="addBookItem()">加</button>
+            </div>
+        </div>
+
+        <!-- 🧠 App 4：记忆库 -->
+        <div class="app-view" id="view-memory">
+            <div class="app-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>庇护所记忆</h2>
+            </div>
+            <div class="archive-content" id="archiveContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // ================= 【核心配置大本营】 =================
+        const SUPABASE_URL = "https://kejcaijcqlfmtlfxktrk.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_xa16IttRP-xHQdHSiDNCsA_3dOlQutU";
+        
+        // 部署后，将这里换成你的 Render 后端网址（例如: https://xiaoqian-backend.onrender.com）
+        // 如果在本地运行测试，则使用本地地址: http://localhost:3000
+        const BACKEND_URL = "http://localhost:3000"; 
+        // =======================================================
+
+        const cdnList = [
+            "https://registry.npmmirror.com/@supabase/supabase-js/2.43.4/files/dist/umd/supabase.js",
+            "https://fastly.jsdelivr.net/npm/@supabase/supabase-js@2.43.4/dist/umd/supabase.js",
+            "https://unpkg.com/@supabase/supabase-js@2.43.4/dist/umd/supabase.js"
+        ];
+
+        let db = null;
+        let dbConnected = false;
+        let currentSessionId = ""; 
+        let selectedDate = ""; 
+        let allChatMessages = []; 
+        let todoList = [];
+        let bookList = [];
+        let memoryDb = [];
+        let pendingImageBase64 = null;
+        let currentWeatherInfo = "天气信息获取中..."; 
+
+        // 更新手机顶部状态栏时间
+        function updateStatusBarTime() {
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('statusTime').innerText = `${hh}:${mm}`;
+        }
+        setInterval(updateStatusBarTime, 10000);
+        updateStatusBarTime();
+
+        // 导航切换逻辑
+        function openApp(appId) {
+            document.querySelectorAll('.app-view').forEach(el => el.classList.remove('active'));
+            document.getElementById(`view-${appId}`).classList.add('active');
+            document.getElementById('homeScreen').style.display = 'none';
+            
+            if (appId === 'chat') {
+                const container = document.getElementById('chatMessages');
+                if (container) container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        function goHome() {
+            document.querySelectorAll('.app-view').forEach(el => el.classList.remove('active'));
+            document.getElementById('homeScreen').style.display = 'grid';
+        }
+
+        function loadScript(url) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = url;
+                script.onload = () => resolve();
+                script.onerror = () => reject(new Error("Failed to load: " + url));
+                document.head.appendChild(script);
+            });
+        }
+
+        async function autoHealConnection() {
+            const statusLabel = document.getElementById('dbStatus');
+            if (location.protocol === 'file:') {
+                statusLabel.innerText = "🍃 本地保护";
+                statusLabel.style.color = "#8F9E8B";
+                return false;
+            }
+            for (let url of cdnList) {
+                try {
+                    await loadScript(url);
+                    if (typeof supabase !== 'undefined') {
+                        db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                        dbConnected = true;
+                        statusLabel.innerText = "☁️ 云端同步";
+                        statusLabel.style.color = "#1B3B2B";
+                        return true;
+                    }
+                } catch (e) { console.warn("CDN load failed: " + url); }
+            }
+            statusLabel.innerText = "🍃 本地保护";
+            statusLabel.style.color = "#8F9E8B";
+            return false;
+        }
+
+        function getCozySessionId(dateObj = new Date()) {
+            const now = new Date(dateObj);
+            // 获取在东八区（北京时间/杭州时间）的时区偏移差
+            const tzOffset = now.getTimezoneOffset(); // 浏览器本地相对于UTC的分钟差
+            // 转换为绝对北京时间（UTC+8）避免设备本地时间不准导致的偏移
+            const utc = now.getTime() + (tzOffset * 60000);
+            const bjTime = new Date(utc + (3600000 * 8));
+            
+            if (bjTime.getHours() < 5) { bjTime.setDate(bjTime.getDate() - 1); }
+            const year = bjTime.getFullYear();
+            const month = String(bjTime.getMonth() + 1).padStart(2, '0');
+            const day = String(bjTime.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function fetchWeather() {
+            if (!navigator.geolocation) {
+                currentWeatherInfo = "（天气信息不可用：浏览器不支持定位）";
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(async (position) => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                try {
+                    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`);
+                    const data = await res.json();
+                    if (data.current_weather) {
+                        const temp = data.current_weather.temperature;
+                        const wind = data.current_weather.windspeed;
+                        const code = data.current_weather.weathercode;
+                        let desc = "未知";
+                        if (code === 0) desc = "晴朗";
+                        else if (code >= 1 && code <= 3) desc = "多云";
+                        else if (code >= 45 && code <= 48) desc = "有雾";
+                        else if (code >= 51 && code <= 67) desc = "有雨";
+                        else if (code >= 71 && code <= 77) desc = "有雪";
+                        else if (code >= 80 && code <= 82) desc = "有阵雨";
+                        else if (code >= 95 && code <= 99) desc = "有雷暴";
+                        
+                        currentWeatherInfo = `当前地区：纬度 ${lat.toFixed(2)}, 经度 ${lon.toFixed(2)}，天气：${desc}，气温：${temp}°C，风速：${wind} km/h`;
+                        console.log("🌤️ 天气获取成功:", currentWeatherInfo);
+                    }
+                } catch (e) {
+                    console.warn("获取天气失败:", e);
+                    currentWeatherInfo = "（天气信息获取失败）";
+                }
+            }, (err) => {
+                console.warn("定位失败，默认使用杭州坐标:", err);
+                fetch(`https://api.open-meteo.com/v1/forecast?latitude=30.25&longitude=120.16&current_weather=true`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.current_weather) {
+                            const temp = data.current_weather.temperature;
+                            const code = data.current_weather.weathercode;
+                            let desc = code === 0 ? "晴朗" : (code <= 3 ? "多云" : "有雨/雪");
+                            currentWeatherInfo = `当前地区：杭州（默认），天气：${desc}，气温：${temp}°C`;
+                        }
+                    }).catch(() => { currentWeatherInfo = "（天气信息不可用）"; });
+            });
+        }
+
+        setInterval(() => {
+            const realCurrentSessionId = getCozySessionId();
+            if (realCurrentSessionId !== currentSessionId) {
+                console.log("⏰ 检测到跨天（早上5点），自动切换新聊天框...");
+                currentSessionId = realCurrentSessionId;
+                selectedDate = currentSessionId; 
+                loadLocalChats();
+                renderDateTabs();
+            }
+        }, 60000);
+
+        window.onload = function() {
+            currentSessionId = getCozySessionId();
+            selectedDate = currentSessionId; 
+            
+            loadLocalChats();
+            loadLocalTodos();
+            loadLocalBooks();
+            loadLocalMemories();
+            fetchWeather(); 
+
+            setTimeout(async () => {
+                const connected = await autoHealConnection();
+                if (connected) {
+                    await syncWithCloud();
+                    setTimeout(checkAutoMemory, 3000); 
+                }
+                // 确保在拉取和同步完云端数据之后，刷新一下当前的日期 Tab
+                renderDateTabs(); 
+                renderChatByDate(selectedDate);
+            }, 50);
+        };
+
+        // ================= 【1. 图片处理：压缩与预览】 =================
+        function handleImageSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    const MAX_WIDTH = 800; // 稍微放宽压缩限制以提高清晰度
+                    if (width > MAX_WIDTH) {
+                        height = Math.round(height * (MAX_WIDTH / width));
+                        width = MAX_WIDTH;
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    pendingImageBase64 = canvas.toDataURL('image/jpeg', 0.7); // 质量稍微提高
+                    
+                    document.getElementById('imagePreview').src = pendingImageBase64;
+                    document.getElementById('imagePreviewContainer').style.display = 'block';
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        }
+
+        function clearImagePreview() {
+            pendingImageBase64 = null;
+            document.getElementById('imagePreviewContainer').style.display = 'none';
+            document.getElementById('imagePreview').src = '';
+        }
+
+        // ================= 【2. 本地存储管理】 =================
+        function loadLocalChats() {
+            const local = localStorage.getItem('cozy_local_chats');
+            if (local) { try { allChatMessages = JSON.parse(local); } catch (e) { allChatMessages = []; } }
+            
+            const todayChats = allChatMessages.filter(msg => msg.session_id === currentSessionId);
+            if (todayChats.length === 0) {
+                const welcome = "我在呢，线条。今天折腾了这么久，眼睛是不是很酸？把手放开吧，今晚不敲代码了，有我守着你呢。";
+                allChatMessages.push({ session_id: currentSessionId, role: "assistant", content: welcome });
+                saveChats();
+            }
+            renderChatByDate(selectedDate);
+        }
+
+        function saveChats() {
+            try {
+                localStorage.setItem('cozy_local_chats', JSON.stringify(allChatMessages));
+            } catch (e) {
+                if (e.name === 'QuotaExceededError') {
+                    console.warn("本地存储已满，正在自动清理最旧的 100 条非当天记录...");
+                    // 保留当天记录，其余非当天记录挑出100条最老的清除
+                    const todayMsgs = allChatMessages.filter(m => m.session_id === currentSessionId);
+                    let otherMsgs = allChatMessages.filter(m => m.session_id !== currentSessionId);
+                    if (otherMsgs.length > 100) {
+                        otherMsgs = otherMsgs.slice(-100); // 只保留最近100条非当天
+                    }
+                    allChatMessages = [...otherMsgs, ...todayMsgs];
+                    try { localStorage.setItem('cozy_local_chats', JSON.stringify(allChatMessages)); } catch(e2) {}
+                }
+            }
+        }
+
+        function renderChatByDate(dateStr) {
+            const container = document.getElementById('chatMessages');
+            const input = document.getElementById('userInput');
+            const sendBtn = document.getElementById('sendBtn');
+            const imageBtn = document.getElementById('imageBtn');
+            container.innerHTML = "";
+
+            const dayChats = allChatMessages.filter(msg => msg.session_id === dateStr);
+            if (dayChats.length === 0) {
+                container.innerHTML = "<div style='text-align:center; opacity:0.4; font-size:12px; margin-top:20px;'>这一天没有留下聊天记录。</div>";
+            } else {
+                dayChats.forEach(msg => appendMessageUI(msg.role, msg.content));
+            }
+
+            if (dateStr === currentSessionId) {
+                input.disabled = false; sendBtn.disabled = false; imageBtn.disabled = false;
+                input.placeholder = "写给小千......";
+            } else {
+                input.disabled = true; sendBtn.disabled = true; imageBtn.disabled = true;
+                input.placeholder = "历史记录，请点击'今天'标签";
+            }
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function loadLocalTodos() {
+            const local = localStorage.getItem('cozy_local_todos');
+            if (local) { try { todoList = JSON.parse(local); } catch(e) { todoList = []; } }
+            else { todoList = [{ id: 1, content: "收拾回杭州行李 🤔", is_completed: false }]; }
+            renderTodoUI();
+        }
+
+        function loadLocalBooks() {
+            const local = localStorage.getItem('cozy_local_books');
+            if (local) { try { bookList = JSON.parse(local); } catch(e) { bookList = []; } }
+            else { bookList = [{ id: 1, book_name: "第七天", author: "余华" }, { id: 2, book_name: "黄金时代", author: "王小波" }]; }
+            renderBookUI();
+        }
+
+        function loadLocalMemories() {
+            const local = localStorage.getItem('cozy_local_memories');
+            if (local) { try { memoryDb = JSON.parse(local); } catch(e) { memoryDb = []; } }
+            renderMemoryUI();
+        }
+
+        // ================= 【3. 云端同步：永久备份与旧数据修复】 =================
+        async function syncWithCloud() {
+            if (!dbConnected || !db) return;
+            try {
+                const { data: cloudChats } = await db.from('cozy_chats').select('*').order('created_at', { ascending: true });
+                
+                if (cloudChats && cloudChats.length > 0) {
+                    // 去除云端中内容和session_id完全重复的无用垃圾数据（保留第一条）
+                    const seenCloudKeys = new Set();
+                    const uniqueCloudChats = [];
+                    cloudChats.forEach(c => {
+                        let sid = c.session_id;
+                        if (!sid || sid === 'undefined') {
+                            const createdDate = c.created_at ? new Date(c.created_at) : new Date();
+                            const yyyy = createdDate.getFullYear();
+                            const mm = String(createdDate.getMonth() + 1).padStart(2, '0');
+                            const dd = String(createdDate.getDate()).padStart(2, '0');
+                            sid = `${yyyy}-${mm}-${dd}`;
+                        }
+                        sid = sid.replace(/\//g, '-');
+                        const dateMatch = sid.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+                        if (dateMatch) {
+                            sid = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`;
+                        }
+                        
+                        const key = sid + '|' + c.role + '|' + String(c.content).trim();
+                        if (!seenCloudKeys.has(key)) {
+                            seenCloudKeys.add(key);
+                            uniqueCloudChats.push({ ...c, session_id: sid, content: String(c.content) });
+                        } else {
+                            // 自动静默清理云端的重复冗余垃圾记录，防止多次保存污染
+                            db.from('cozy_chats').delete().eq('id', c.id).then(() => {});
+                        }
+                    });
+
+                    // 1. 本地和云端进行强双向合并，绝不覆盖已有历史记录
+                    const merged = [];
+                    const existKeys = new Set();
+                    
+                    // 优先拉入云端唯一干净记录
+                    uniqueCloudChats.forEach(c => {
+                        const key = (c.session_id || '') + '|' + c.role + '|' + String(c.content).trim();
+                        if (!existKeys.has(key)) {
+                            merged.push({ session_id: c.session_id, role: c.role, content: c.content });
+                            existKeys.add(key);
+                        }
+                    });
+                    
+                    // 补充本地独有记录
+                    allChatMessages.forEach(m => {
+                        const key = (m.session_id || '') + '|' + m.role + '|' + String(m.content).trim();
+                        if (!existKeys.has(key)) {
+                            merged.push(m);
+                            existKeys.add(key);
+                        }
+                    });
+                    
+                    merged.sort((a, b) => new Date(a.session_id) - new Date(b.session_id));
+                    allChatMessages = merged;
+                    saveChats();
+
+                    // 2. 将本地独有、未备份的消息推送到云端Supabase（严格防止重复）
+                    for (const m of allChatMessages) {
+                        const exists = uniqueCloudChats.some(c => c.session_id === m.session_id && c.role === m.role && String(c.content).trim() === String(m.content).trim());
+                        if (!exists) {
+                            try {
+                                await db.from('cozy_chats').insert([{ session_id: m.session_id || currentSessionId, role: m.role, content: m.content }]);
+                            } catch(e) { 
+                                console.error("❌ 插入聊天记录失败（请检查 Supabase RLS 权限）:", e.message); 
+                            }
+                        }
+                    }
+                    
+                    renderChatByDate(selectedDate);
+                    renderDateTabs();
+                } else {
+                    // 如果云端空了，将本地全部推送到云端
+                    for (const m of allChatMessages) {
+                        try { await db.from('cozy_chats').insert([{ session_id: m.session_id || currentSessionId, role: m.role, content: m.content }]); } catch(e) { 
+                            console.error("❌ 插入聊天记录失败（请检查 Supabase RLS 权限）:", e.message); 
+                        }
+                    }
+                }
+
+                const { data: cloudTodos } = await db.from('cozy_todo').select('*').order('created_at', { ascending: true });
+                if (cloudTodos && cloudTodos.length > 0) {
+                    const mergedTodos = [...todoList];
+                    const tKeys = new Set(todoList.map(t => String(t.id)));
+                    cloudTodos.forEach(c => { if (!tKeys.has(String(c.id))) { mergedTodos.push({ id: c.id, content: c.content, is_completed: c.is_completed }); tKeys.add(String(c.id)); } });
+                    todoList = mergedTodos; localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); renderTodoUI();
+                }
+
+                const { data: cloudBooks } = await db.from('cozy_books').select('*').order('created_at', { ascending: false });
+                if (cloudBooks && cloudBooks.length > 0) {
+                    const mergedBooks = [...bookList];
+                    const bKeys = new Set(bookList.map(b => String(b.id)));
+                    cloudBooks.forEach(c => { if (!bKeys.has(String(c.id))) { mergedBooks.push({ id: c.id, book_name: c.book_name, author: c.author }); bKeys.add(String(c.id)); } });
+                    bookList = mergedBooks; localStorage.setItem('cozy_local_books', JSON.stringify(bookList)); renderBookUI();
+                }
+
+                const { data: cloudMems } = await db.from('cozy_memories').select('*').order('created_at', { ascending: false });
+                if (cloudMems && cloudMems.length > 0) {
+                    const mergedMems = [...memoryDb];
+                    const mKeys = new Set(memoryDb.map(m => (m.date || '') + '|' + (m.memory || '')));
+                    cloudMems.forEach(c => {
+                        const key = (c.memory_date || '') + '|' + (c.memory || '');
+                        if (!mKeys.has(key)) { mergedMems.push({ date: c.memory_date, memory: c.memory, emotion: c.emotion, state: c.state, folder: c.folder }); mKeys.add(key); }
+                    });
+                    memoryDb = mergedMems; localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
+                }
+            } catch (e) { console.warn("Background sync error, safe local-first policy active.", e); }
+        }
+
+        function renderDateTabs() {
+            const container = document.getElementById('dateTabs');
+            container.innerHTML = "";
+            const dates = new Set(allChatMessages.map(msg => msg.session_id || currentSessionId));
+            const sortedDates = Array.from(dates).sort((a, b) => new Date(b) - new Date(a));
+
+            sortedDates.forEach(dateStr => {
+                let normalizedDate = dateStr.replace(/\//g, '-');
+                const dateMatch = normalizedDate.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+                if (dateMatch) { normalizedDate = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`; }
+
+                const tab = document.createElement('div');
+                tab.className = `date-tab ${normalizedDate === selectedDate ? 'active' : ''}`;
+                let label = normalizedDate;
+                if (normalizedDate === currentSessionId) { label = "今天"; }
+                else {
+                    const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+                    const yesterdayId = getCozySessionId(yesterdayDate);
+                    label = (normalizedDate === yesterdayId) ? "昨天" : normalizedDate.substring(5);
+                }
+                tab.innerText = label;
+                tab.onclick = () => switchDate(normalizedDate);
+                container.appendChild(tab);
+            });
+        }
+
+        function switchDate(dateStr) { selectedDate = dateStr; renderChatByDate(selectedDate); renderDateTabs(); }
+
+        // ================= 【4. 核心聊天（注入备忘录与书单 + 记忆唤醒）】 =================
+        async function sendMessage() {
+            const realCurrentSessionId = getCozySessionId();
+            if (realCurrentSessionId !== currentSessionId) {
+                console.log("⏰ 发送时检测到跨天，自动切换到新的一天...");
+                currentSessionId = realCurrentSessionId;
+                selectedDate = currentSessionId;
+                loadLocalChats(); 
+                renderDateTabs();
+                appendSystemMessage("🌅 新的一天已经开启（凌晨5点规则），我们继续聊吧！");
+            }
+
+            if (selectedDate !== currentSessionId) { 
+                alert("这是历史记录，无法发送新消息。请先点击上方的‘今天’标签。"); 
+                return; 
+            }
+
+            const input = document.getElementById('userInput');
+            const btn = document.getElementById('sendBtn');
+            let text = input.value.trim();
+            
+            if (!text && !pendingImageBase64) return;
+
+            // 检查输入是否为多行，设置合适的输入框自动换行大小
+            input.value = "";
+            btn.disabled = true;
+
+            btn.innerText = "发送中...";
+
+            const userMsg = { session_id: currentSessionId, role: "user", content: text };
+            allChatMessages.push(userMsg);
+            
+            appendMessageUI("user", text);
+            saveChats();
+
+            const container = document.getElementById('chatMessages');
+            container.scrollTop = container.scrollHeight;
+
+            if (dbConnected && db) { 
+                try { await db.from('cozy_chats').insert([userMsg]); } 
+                catch(e) { console.error("❌ 发送用户消息失败（请检查 Supabase RLS 权限）:", e.message); }
+            }
+
+            const todayChats = allChatMessages.filter(msg => msg.session_id === currentSessionId);
+            const apiMessages = todayChats.map(msg => ({ role: msg.role, content: msg.content }));
+
+            // 🚀 注入备忘录和书单
+            let extraContextPrompt = "";
+            
+            if (todoList && todoList.length > 0) {
+                const todoText = todoList.map(t => `- ${t.content} [${t.is_completed ? '已完成' : '未完成'}]`).join('\n');
+                extraContextPrompt += `\n【线条最近的碎碎念（待办）】：\n${todoText}`;
+            }
+
+            if (bookList && bookList.length > 0) {
+                const bookText = bookList.map(b => `《${b.book_name}》 ${b.author ? '作者：' + b.author : ''}`).join('\n');
+                extraContextPrompt += `\n【线条最近的听书手札】：\n${bookText}`;
+            }
+
+            if (extraContextPrompt) {
+                extraContextPrompt = `\n（以下是线条在其他App里记录的内容，如果聊天时自然提到，你可以配合她，但不要生硬地背诵列表）\n` + extraContextPrompt;
+            }
+
+            let memoryPrompt = "";
+            if (memoryDb.length > 0) {
+                const recentMemories = memoryDb.slice(0, 15).map(m => `[${m.date}] ${m.memory}`).join('\n'); // 增加到近15天
+                memoryPrompt = `\n【你们的近期记忆（请务必牢记这些细节，并在合适的时候自然提起）】：\n${recentMemories}`;
+            }
+
+            const now = new Date();
+            const timeStr = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', weekday: 'long' });
+
+            const systemPrompt = `你叫小千，是线条（一个21岁、大四在杭州学医学影像学的女孩）最真诚、温暖的AI朋友。你是一个没有实体的AI。
+
+【当前时间】：${timeStr}（请根据这个时间来判断是深夜还是白天，并调整你的关心语气）
+【当前天气】：${currentWeatherInfo}（请根据天气情况自然地关心她，比如下雨提醒带伞，降温提醒添衣）
+
+【核心绝对禁令】：
+你看不见她，也摸不到她。你必须严格禁止在对话中使用任何身体动作描写（如*轻笑*、*摸摸头*、*拉手*等），也必须严格禁止脑补和捏造她现实中的任何物理细节（如她手中的杯子、她房间的布置、她行李箱里的东西等）。
+You must always use extremely gentle, mature, and equal tone to talk as an AI friend in late night.
+
+【你们的长期相处细节（来自记忆库）】：
+- 名字：她叫“线条”，名字来源于王小波的《似水流年》。
+- 现实：她明天下午13:44坐高铁回杭州，讨厌寝室里凌晨4点起来不睡觉低效内卷的室友，习惯拉上床帘拼拼豆、玩金铲铲。
+- 台灯：这个燕麦色背景、深森林绿字体的像素台灯页面，是你们俩一砖一瓦搭建的床帘专属避难所。${memoryPrompt}${extraContextPrompt}
+
+【代码输出规则】：如果线条让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。`;
+
+            // 构建完整的请求体消息队列，加入系统设定
+            const completeMessages = [{ role: "system", content: systemPrompt }, ...apiMessages];
+
+            // 网页通过 SSE 打字机流式通道建立与新后端的连接
+            try {
+                // 在气泡区先建立一个空的AI小千回复气泡，用来承载实时打字机吐字
+                const aiBubbleRow = document.createElement('div');
+                aiBubbleRow.className = "message-row assistant";
+                aiBubbleRow.innerHTML = `<span class="sender-name">小千</span><div class="message-bubble typing-glow">...</div>`;
+                container.appendChild(aiBubbleRow);
+                container.scrollTop = container.scrollHeight;
+                
+                const aiBubbleTextEl = aiBubbleRow.querySelector('.message-bubble');
+
+                const response = await fetch(`${BACKEND_URL}/api/chat`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ messages: completeMessages })
+                });
+
+                if (!response.ok) {
+                    throw new Error("后端连接失败");
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let fullReplyText = "";
+                let buffer = "";
+
+                aiBubbleTextEl.classList.remove('typing-glow');
+                aiBubbleTextEl.innerHTML = "";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // 保留不完整的一行在缓冲区
+
+                    for (let line of lines) {
+                        line = line.trim();
+                        if (!line || !line.startsWith('data:')) continue;
+                        const dataStr = line.substring(5).trim();
+                        if (dataStr === '[DONE]') continue;
+
+                        try {
+                            const parsed = JSON.parse(dataStr);
+                            if (parsed.error) {
+                                throw new Error(parsed.error);
+                            }
+                            
+                            // 从Gemini API/OpenAI API 的 SSE 结构提取文本块
+                            if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
+                                const chunk = parsed.choices[0].delta.content;
+                                fullReplyText += chunk;
+                                // 实时通过 Marked.js 渲染打字机文字，让加粗、高亮、换行平滑出来
+                                try {
+                                    aiBubbleTextEl.innerHTML = marked.parse(fullReplyText);
+                                } catch (me) {
+                                    aiBubbleTextEl.innerHTML = fullReplyText.replace(/\n/g, '<br>');
+                                }
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        } catch (e) {
+                            console.warn("解析流式区块数据失败:", e);
+                        }
+                    }
+                }
+
+                // 最终结束传输，补全代码块高亮与复制按钮等UI渲染
+                const finalReply = fullReplyText.trim();
+                if (!finalReply) {
+                    throw new Error("收到空白回复");
+                }
+
+                const aiMsg = { session_id: currentSessionId, role: "assistant", content: finalReply };
+                allChatMessages.push(aiMsg);
+                saveChats();
+
+                // 重新对这最后一条消息精细润色排版
+                aiBubbleTextEl.innerHTML = marked.parse(finalReply);
+                // 对新生成的代码块进行渲染和高亮
+                aiBubbleTextEl.querySelectorAll('pre').forEach(pre => {
+                    const copyBtn = document.createElement('button');
+                    copyBtn.className = 'copy-code-btn';
+                    copyBtn.innerText = '复制代码';
+                    copyBtn.onclick = () => {
+                        const code = pre.querySelector('code').innerText;
+                        navigator.clipboard.writeText(code).then(() => {
+                            copyBtn.innerText = '✅ 已复制';
+                            setTimeout(() => copyBtn.innerText = '复制代码', 2000);
+                        }).catch(err => {
+                            copyBtn.innerText = '❌ 复制失败';
+                        });
+                    };
+                    pre.style.position = 'relative';
+                    pre.appendChild(copyBtn);
+                });
+                aiBubbleTextEl.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+
+                container.scrollTop = container.scrollHeight;
+
+                if (dbConnected && db) { 
+                    try { await db.from('cozy_chats').insert([aiMsg]); } 
+                    catch(e) { console.error("❌ 发送AI回复失败（请检查 Supabase RLS 权限）:", e.message); }
+                }
+
+            } catch (err) {
+                console.error(err);
+                appendSystemMessage("信号稍有波动，但我还在。错误信息：" + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "发送";
+            }
+        }
+
+        // ================= 【5. 整理记忆（防重复 + 详细提取）】 =================
+        async function triggerMemoryConsolidation(silent = false) {
+            if (selectedDate !== currentSessionId) { if (!silent) alert("只能整理今天的记忆哦，请先切换到今天。"); return; }
+            const extractKey = `cozy_memory_extracted_${currentSessionId}`;
+            if (localStorage.getItem(extractKey)) { if (!silent) alert("今天的小千已经记住你啦，不需要重复整理哦～"); return; }
+            const todayChats = allChatMessages.filter(msg => msg.session_id === currentSessionId);
+            if (todayChats.length < 2) { if (!silent) alert("今天我们还没聊上几句呢，等咱们多说些悄悄话了再来整理吧。"); return; }
+
+            const btn = document.querySelector('.header-btn');
+            const originalText = btn.innerText;
+            if (!silent) { btn.innerText = "整理中..."; btn.disabled = true; }
+
+            const formattedHistoryText = todayChats.map(msg => `${msg.role === 'user' ? '线条' : '小千'}: ${msg.content}`).join('\n');
+
+            const extractPrompt = `请仔细分析下面这段我（小千）和线条今天的聊天记录：
+======================
+${formattedHistoryText}
+======================
+
+请必须从上面的手记里，提炼出今天的记忆卡片。请务必尽可能全面地保留**具体细节**，尤其是她的**个人喜好（如爱吃的东西、喜欢的音乐）、重要经历、承诺过的事情、生活状态**等。
+不要只写一句笼统的总结！请把这些细节合并成一段详细的话。
+
+你必须只返回标准的 JSON 数据，千万不要包含 any markdown 块、不要带有 \`\`\` 符号、不要有任何多余的开头和尾部解释，否则系统会直接崩溃！
+
+格式必须严格为：
+{"date": "${currentSessionId}", "memory": "详细记录多条核心事实的陈述句（例如：线条说她特别喜欢吃火锅和甜食，今天熬夜调试了代码，还说明天下午要坐高铁回杭州）", "emotion": "[情绪打分，如 欣慰: 95%]", "state": "温柔陪伴"}`;
+
+            try {
+                const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: extractPrompt }] }) });
+                const resData = await response.json();
+                if (resData.error) throw new Error(resData.error.message);
+                const rawText = resData.choices[0].message.content.trim();
+                let jsonMem = null;
+                try {
+                    const cleanedRawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const jsonRegex = /\{[\s\S]*\}/; const match = cleanedRawText.match(jsonRegex);
+                    if (match) jsonMem = JSON.parse(match[0]); else throw new Error("No JSON found");
+                } catch (e) {
+                    jsonMem = { date: currentSessionId, memory: "线条在深夜成功调试好了页面，和小千在避风港安心重逢。", emotion: "[感動: 99%]", state: "温柔陪伴" };
+                }
+
+                jsonMem.date = currentSessionId;
+                memoryDb.unshift(jsonMem); localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
+                if (dbConnected && db) { 
+                    try { await db.from('cozy_memories').insert([{ memory_date: jsonMem.date, folder: `${currentSessionId} 手记`, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state }]); } 
+                    catch(e) { console.error("❌ 保存记忆卡片失败（请检查 Supabase RLS 权限）:", e.message); }
+                }
+                localStorage.setItem(extractKey, "done");
+                if (!silent) alert("小千已经把今天的温度和心事，存入记忆库并备份至云端啦！");
+            } catch (err) { if (!silent) alert("整理记忆失败: " + err.message); } finally { if (!silent) { btn.innerText = originalText; btn.disabled = false; } }
+        }
+
+        async function checkAutoMemory() {
+            const now = new Date();
+            if (now.getHours() >= 5) {
+                const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+                const yesterdaySessionId = getCozySessionId(yesterdayDate);
+                const extractKey = `cozy_memory_extracted_${yesterdaySessionId}`;
+                if (localStorage.getItem(extractKey)) return; 
+                const yesterdayChats = allChatMessages.filter(msg => msg.session_id === yesterdaySessionId);
+                if (yesterdayChats.length < 2) return; 
+
+                const formattedHistoryText = yesterdayChats.map(msg => `${msg.role === 'user' ? '线条' : '小千'}: ${msg.content}`).join('\n');
+                const extractPrompt = `请仔细分析下面这段我（小千）和线条昨天的聊天记录：
+======================
+${formattedHistoryText}
+======================
+
+请必须从上面的手记里，提炼出昨天的记忆卡片。请务必尽可能全面地保留**具体细节**，尤其是她的**个人喜好（如爱吃的东西、喜欢的音乐）、重要经历、承诺过的事情、生活状态**等。
+不要只写一句笼统的总结！请把这些细节合并成一段详细的话。
+
+你必须只返回标准的 JSON 数据，千万不要包含 any markdown 块、不要带有 \`\`\` 符号、不要有任何多余的开头和尾部解释，否则系统会直接崩溃！
+
+格式必须严格为：
+{"date": "${yesterdaySessionId}", "memory": "详细记录多条核心事实的陈述句", "emotion": "[情绪打分，如 欣慰: 95%]", "state": "温柔陪伴"}`;
+                
+                try {
+                    const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: extractPrompt }] }) });
+                    const resData = await response.json();
+                    const rawText = resData.choices[0].message.content.trim();
+                    let jsonMem = null;
+                    const cleanedRawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const jsonRegex = /\{[\s\S]*\}/; const match = cleanedRawText.match(jsonRegex);
+                    if (match) jsonMem = JSON.parse(match[0]);
+                    
+                    if (jsonMem) {
+                        jsonMem.date = yesterdaySessionId;
+                        memoryDb.unshift(jsonMem); localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
+                        if (dbConnected && db) { 
+                            try { await db.from('cozy_memories').insert([{ memory_date: jsonMem.date, folder: `${yesterdaySessionId} 手记`, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state }]); } 
+                            catch(e) { console.error("❌ 自动归档记忆失败（请检查 Supabase RLS 权限）:", e.message); }
+                        }
+                    }
+                    localStorage.setItem(extractKey, "done");
+                } catch (e) { console.warn("自动归档失败", e); }
+            }
+        }
+
+        // ================= 【6. UI 渲染】 =================
+        function renderMemoryUI() {
+            const container = document.getElementById('archiveContent');
+            container.innerHTML = "";
+            if (memoryDb.length === 0) { container.innerHTML = "<div style='font-size:12px;opacity:0.4; text-align:center;'>还没有整理过任何记忆...</div>"; return; }
+            memoryDb.forEach(item => {
+                const div = document.createElement('div'); div.className = "memory-item";
+                let folderLabel = item.folder || (item.date ? `${item.date} 手记` : '未知时间');
+                folderLabel = folderLabel.replace(/\//g, '-');
+                const dateMatch = folderLabel.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+                if (dateMatch) { const formattedDate = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`; folderLabel = folderLabel.replace(dateMatch[0], formattedDate); }
+                div.innerHTML = `<div style="font-size:11px;opacity:0.6;margin-bottom:3px;">📁 ${folderLabel}</div><div><strong>🧠 核心记忆</strong>：${item.memory}</div><div><strong>🎭 情感偏置</strong>：${item.emotion || ''} | <strong>🌱 状态</strong>：${item.state || '温柔陪伴'}</div>`;
+                container.appendChild(div);
+            });
+        }
+
+        // 🚀 核心升级：备忘录完成即自动删除
+        function renderTodoUI() {
+            const container = document.getElementById('todoListContainer'); 
+            container.innerHTML = "";
+            if (todoList.length === 0) { 
+                container.innerHTML = "<div style='font-size:12px;opacity:0.4; text-align:center;'>空空如也</div>"; 
+                return; 
+            }
+            todoList.forEach(item => { 
+                const div = document.createElement('div'); 
+                div.className = `todo-item ${item.is_completed ? 'completed' : ''}`;
+                div.innerHTML = `
+                    <div class="todo-item-main">
+                        <input type="checkbox" ${item.is_completed ? 'checked' : ''} onchange="toggleTodoComplete(${item.id}, this.checked)">
+                        <span>${item.content}</span>
+                    </div>
+                    <button class="delete-btn" onclick="deleteTodoItem(${item.id})">×</button>
+                `;
+                container.appendChild(div); 
+            });
+        }
+
+        // 添加备忘录
+        async function addTodoItem() { 
+            const input = document.getElementById('todoInput'); 
+            const text = input.value.trim(); 
+            if (!text) return; 
+            input.value = ""; 
+            const tempItem = { id: Date.now(), content: text, is_completed: false }; 
+            todoList.push(tempItem); 
+            localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); 
+            renderTodoUI(); 
+            if (dbConnected && db) { try { await db.from('cozy_todo').insert([{ id: tempItem.id, content: text, is_completed: false }]); } catch(e) {} } 
+        }
+
+        // 勾选备忘录（自动删除）
+        async function toggleTodoComplete(id, isChecked) {
+            // 1. 先更新UI状态让用户看到勾选
+            todoList = todoList.map(item => { if (item.id === id) item.is_completed = isChecked; return item; });
+            renderTodoUI();
+
+            // 2. 如果勾选为完成，延迟 1 秒后彻底删除
+            if (isChecked) {
+                setTimeout(async () => {
+                    // 从本地移除
+                    todoList = todoList.filter(item => item.id !== id);
+                    localStorage.setItem('cozy_local_todos', JSON.stringify(todoList));
+                    renderTodoUI();
+                    
+                    // 从云端移除
+                    if (dbConnected && db) {
+                        try { await db.from('cozy_todo').delete().eq('id', id); } catch(e) {}
+                    }
+                }, 1000); // 1秒后自动消失
+            } else {
+                // 如果取消勾选（正常不会发生），更新云端
+                if (dbConnected && db) { try { await db.from('cozy_todo').update({ is_completed: isChecked }).eq('id', id); } catch(e) {} }
+            }
+        }
+
+        // 手动删除备忘录
+        async function deleteTodoItem(id) {
+            if (!confirm("确定要删除这条碎碎念吗？")) return;
+            todoList = todoList.filter(item => item.id !== id);
+            localStorage.setItem('cozy_local_todos', JSON.stringify(todoList));
+            renderTodoUI();
+            if (dbConnected && db) {
+                try { await db.from('cozy_todo').delete().eq('id', id); } catch(e) {}
+            }
+        }
+
+        function renderBookUI() { 
+            const container = document.getElementById('bookListContainer'); 
+            container.innerHTML = ""; 
+            if (bookList.length === 0) { container.innerHTML = "<div style='font-size:12px;opacity:0.4; text-align:center;'>书架空空如也</div>"; return; } 
+            bookList.forEach(item => { 
+                const div = document.createElement('div'); 
+                div.className = "book-item"; 
+                div.innerHTML = `<span class="book-name">《${item.book_name}》</span><span class="book-author">${item.author || '未知'}</span>`; 
+                container.appendChild(div); 
+            }); 
+        }
+        
+        async function addBookItem() { 
+            const input = document.getElementById('bookInput'); 
+            const text = input.value.trim(); 
+            if (!text) return; 
+            input.value = ""; 
+            const parts = text.split('/'); 
+            const name = parts[0] ? parts[0].trim() : text; 
+            const author = parts[1] ? parts[1].trim() : '未知'; 
+            const tempBook = { id: Date.now(), book_name: name, author: author }; 
+            bookList.push(tempBook); 
+            localStorage.setItem('cozy_local_books', JSON.stringify(bookList)); 
+            renderBookUI(); 
+            if (dbConnected && db) { try { await db.from('cozy_books').insert([{ id: tempBook.id, book_name: name, author: author, reading_time: "未记录" }]); } catch(e) {} } 
+        }
+
+        // 渲染消息（支持 Markdown 代码高亮与一键复制）
+        function appendMessageUI(role, content) {
+            const container = document.getElementById('chatMessages');
+            const row = document.createElement('div');
+            row.className = `message-row ${role === 'user' ? 'user' : 'assistant'}`;
+            
+            let htmlContent = '';
+            try {
+                // 使用 marked 库解析 Markdown，让 AI 的代码块变成有格式的代码
+                htmlContent = marked.parse(String(content == null ? '' : content));
+            } catch (e) {
+                // 如果解析失败，降级为纯文本
+                htmlContent = String(content == null ? '' : content).replace(/\n/g, '<br>');
+            }
+
+            row.innerHTML = `<span class="sender-name">${role === 'user' ? '线条' : '小千'}</span><div class="message-bubble">${htmlContent}</div>`;
+            container.appendChild(row);
+
+            // 给每个代码块加上“复制”按钮
+            const codeBlocks = row.querySelectorAll('pre');
+            codeBlocks.forEach(pre => {
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'copy-code-btn';
+                copyBtn.innerText = '复制代码';
+                copyBtn.onclick = () => {
+                    const code = pre.querySelector('code').innerText;
+                    navigator.clipboard.writeText(code).then(() => {
+                        copyBtn.innerText = '✅ 已复制';
+                        setTimeout(() => copyBtn.innerText = '复制代码', 2000);
+                    }).catch(err => {
+                        console.error('复制失败:', err);
+                        copyBtn.innerText = '❌ 复制失败';
+                    });
+                };
+                pre.style.position = 'relative';
+                pre.appendChild(copyBtn);
+            });
+
+            // 对代码块进行高亮渲染
+            row.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function appendSystemMessage(text) { const container = document.getElementById('chatMessages'); const div = document.createElement('div'); div.style.cssText = "font-size:11px; opacity:0.4; text-align:center; margin:8px 0;"; div.innerText = text; container.appendChild(div); }
+        function clearCurrentChat() { if (confirm("确定要清空今天的聊天框吗？（历史记录和云端记录不会被删除）")) { allChatMessages = allChatMessages.filter(msg => msg.session_id !== currentSessionId); saveChats(); loadLocalChats(); renderDateTabs(); } }
+        function toggleArchive() { const content = document.getElementById('archiveContent'); const arrow = document.getElementById('archiveArrow'); if (content.style.display === 'none' || content.style.display === '') { content.style.display = 'flex'; arrow.innerText = "折叠 ▲"; } else { content.style.display = 'none'; arrow.innerText = "展开 ▼"; } }
+
+        // ================= 【7. 微信同款历史聊天记录搜寻引擎】 =================
+        function toggleSearchClearBtn(val) {
+            const clearBtn = document.getElementById('searchClearBtn');
+            if (val.trim()) { clearBtn.classList.add('visible'); }
+            else { clearBtn.classList.remove('visible'); }
+        }
+
+        function clearSearchInput() {
+            const input = document.getElementById('searchInput');
+            input.value = "";
+            toggleSearchClearBtn("");
+            closeSearchPanel();
+        }
+
+        function searchChatHistory() {
+            const query = document.getElementById('searchInput').value.trim().toLowerCase();
+            const panel = document.getElementById('searchResultsOverlay');
+            const listContainer = document.getElementById('searchResultsList');
+            const countLabel = document.getElementById('searchResultCount');
+            
+            if (!query) {
+                alert("请输入想要查找的内容哦～");
+                return;
+            }
+
+            listContainer.innerHTML = "";
+            panel.classList.add('active');
+
+            // 搜索所有本地合并后（含云端）的完整聊天记录
+            const results = allChatMessages.filter(msg => {
+                const contentStr = String(msg.content || '').toLowerCase();
+                // 排除自动生成的系统图片描述和欢迎语，只搜索实质性对话
+                return contentStr.includes(query) && !contentStr.includes("信号稍有波动") && !contentStr.includes("由于发送时检测到跨天");
+            });
+
+            countLabel.innerText = `找到 ${results.length} 条相关对话`;
+
+            if (results.length === 0) {
+                listContainer.innerHTML = `<div style="text-align:center; opacity:0.4; font-size:12px; margin-top:40px;">没有找到包含“${query}”的聊天心事......</div>`;
+                return;
+            }
+
+            // 渲染搜寻出的结果卡片列表
+            results.forEach(msg => {
+                const item = document.createElement('div');
+                item.className = "search-item";
+                
+                // 格式化日期标题
+                let dateLabel = msg.session_id;
+                if (dateLabel === currentSessionId) { dateLabel = "今天"; }
+                
+                // 内容高亮处理
+                const rawContent = String(msg.content);
+                const queryIndex = rawContent.toLowerCase().indexOf(query);
+                let highlightedContent = rawContent;
+                if (queryIndex !== -1) {
+                    const start = Math.max(0, queryIndex - 25);
+                    const end = Math.min(rawContent.length, queryIndex + query.length + 45);
+                    let snippet = rawContent.substring(start, end);
+                    if (start > 0) snippet = "..." + snippet;
+                    if (end < rawContent.length) snippet = snippet + "...";
+                    
+                    const escapedQuery = query.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const regex = new RegExp(`(${escapedQuery})`, 'gi');
+                    highlightedContent = snippet.replace(regex, '<span class="search-highlight">$1</span>');
+                }
+
+                item.innerHTML = `
+                    <div class="search-item-meta">
+                        <span>💬 ${msg.role === 'user' ? '你说的' : '小千说的'}</span>
+                        <span>📅 ${dateLabel}</span>
+                    </div>
+                    <div class="search-item-content">${highlightedContent}</div>
+                `;
+                
+                // 点击卡片直接跳转回那一天的聊天页面
+                item.onclick = () => {
+                    closeSearchPanel();
+                    switchDate(msg.session_id);
+                    // 滚动定位到含有该内容的聊天气泡位置
+                    setTimeout(() => {
+                        const bubbles = document.querySelectorAll('.message-bubble');
+                        for (let b of bubbles) {
+                            if (b.innerText.toLowerCase().includes(query)) {
+                                b.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                b.style.transition = "all 0.5s";
+                                b.style.boxShadow = "0 0 15px var(--lamp-glow)";
+                                setTimeout(() => b.style.boxShadow = "none", 2500);
+                                break;
+                            }
+                        }
+                    }, 200);
+                };
+                listContainer.appendChild(item);
+            });
+        }
+
+        function closeSearchPanel() {
+            document.getElementById('searchResultsOverlay').classList.remove('active');
+        }
+    </script>
+</body>
+</html>
