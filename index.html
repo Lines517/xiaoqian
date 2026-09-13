@@ -167,12 +167,23 @@
         .app-header h2 { font-size: 18px; font-weight: 400; letter-spacing: 2px; }
 
         /* 聊天 App 内部样式 */
-        .chat-messages { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 15px; padding-right: 5px; margin-bottom: 10px; min-width: 0; }
-        .message-row { display: flex; flex-direction: column; max-width: 88%; min-width: 0; }
+        .chat-messages { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 14px; padding-right: 2px; margin-bottom: 10px; min-width: 0; }
+        .message-row { display: flex; flex-direction: column; max-width: 94%; min-width: 0; }
         .message-row.user { align-self: flex-end; align-items: flex-end; }
         .message-row.assistant { align-self: flex-start; align-items: flex-start; }
-        .sender-name { font-size: 11px; opacity: 0.5; margin-bottom: 2px; }
-        .message-bubble { padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.6; max-width: 100%; min-width: 0; overflow-wrap: anywhere; word-break: break-word; overflow: hidden; }
+        .msg-time { font-size: 11px; opacity: 0.4; margin: 0 0 5px 0; width: 100%; text-align: center; letter-spacing: 0.5px; }
+        .msg-main { display: flex; align-items: flex-start; gap: 8px; max-width: 100%; min-width: 0; }
+        .message-row.user .msg-main { flex-direction: row-reverse; }
+        .chat-avatar {
+            width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
+            background-color: var(--primary-light); border: 1px solid rgba(27, 59, 43, 0.12);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; font-weight: bold; color: var(--text-color); opacity: 0.85;
+            cursor: pointer; user-select: none; transition: transform 0.2s, opacity 0.2s;
+        }
+        .chat-avatar:hover { transform: scale(1.06); opacity: 1; }
+        .chat-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .message-bubble { padding: 11px 15px; border-radius: 14px; font-size: 16px; line-height: 1.8; max-width: 100%; min-width: 0; flex: 0 1 auto; overflow-wrap: anywhere; word-break: break-word; overflow: hidden; }
         .message-bubble img { max-width: 100%; height: auto; }
         .user .message-bubble { background-color: var(--primary-color); color: var(--bg-color); border-top-right-radius: 2px; }
         .assistant .message-bubble { background-color: rgba(27, 59, 43, 0.05); color: var(--text-color); border-top-left-radius: 2px; }
@@ -183,7 +194,7 @@
         .date-tab.active { background: var(--primary-color); color: var(--bg-color); opacity: 1; font-weight: bold; }
 
         .chat-input-area { display: flex; gap: 8px; width: 100%; align-items: center; position: relative; margin-top: auto; }
-        input[type="text"] { flex: 1; background-color: transparent; border: 1px solid rgba(27, 59, 43, 0.15); color: var(--text-color); padding: 10px 16px; border-radius: 18px; font-size: 14px; outline: none; font-family: inherit; }
+        input[type="text"] { flex: 1; background-color: transparent; border: 1px solid rgba(27, 59, 43, 0.15); color: var(--text-color); padding: 10px 16px; border-radius: 18px; font-size: 15px; outline: none; font-family: inherit; }
         input[type="text"]::placeholder { color: rgba(27, 59, 43, 0.3); }
         input[type="text"]:focus { border-color: var(--primary-color); }
         input[type="text"]:disabled { background-color: rgba(0,0,0,0.03); cursor: not-allowed; }
@@ -469,6 +480,10 @@
         let pendingImageBase64 = null;
         let currentWeatherInfo = "天气信息获取中..."; 
         let cyberMoments = [];
+        let avatarXiaoqian = "";
+        let avatarUser = "";
+        try { avatarXiaoqian = localStorage.getItem('cozy_avatar_xiaoqian') || ""; } catch (e) {}
+        try { avatarUser = localStorage.getItem('cozy_avatar_user') || ""; } catch (e) {}
 
         // 更新手机顶部状态栏时间
         function updateStatusBarTime() {
@@ -618,6 +633,7 @@
                 const connected = await autoHealConnection();
                 if (connected) {
                     await syncWithCloud();
+                    await loadAvatarsFromCloud();
                     setTimeout(checkAutoMemory, 3000); 
                 }
                 // 同步完数据后重新精准强制刷新视图，这在手机网络卡顿时极其关键
@@ -711,10 +727,11 @@
                                 id: c.id,
                                 session_id: c.session_id,
                                 role: c.role,
-                                content: String(c.content)
+                                content: String(c.content),
+                                time: formatTimeFromISO(c.created_at)
                             };
                             allChatMessages.push(chatObj);
-                            appendMessageUI(c.role, c.content);
+                            appendMessageUI(c.role, c.content, chatObj.time);
                         });
 
                         saveChats();
@@ -743,9 +760,10 @@
                 if (sessionId === currentSessionId) {
                     // 如果是今天且无任何记录，渲染温馨欢迎语首句并入库
                     const welcome = "我在呢，线条。今天折腾了这么久，眼睛是不是很酸？把手放开吧，今晚不敲代码了，有我守着你呢。";
-                    allChatMessages.push({ session_id: currentSessionId, role: "assistant", content: welcome });
+                    const welcomeMsg = { session_id: currentSessionId, role: "assistant", content: welcome, time: getNowTimeStr() };
+                    allChatMessages.push(welcomeMsg);
                     saveChats();
-                    appendMessageUI("assistant", welcome);
+                    appendMessageUI("assistant", welcome, welcomeMsg.time);
                     
                     if (dbConnected && db) {
                         db.from('cozy_chats').insert([{ session_id: currentSessionId, role: "assistant", content: welcome }]).then(() => {});
@@ -754,7 +772,7 @@
                     container.innerHTML = "<div style='text-align:center; opacity:0.4; font-size:12px; margin-top:20px;'>这一天没有留下聊天记录。</div>";
                 }
             } else {
-                dayChats.forEach(msg => appendMessageUI(msg.role, msg.content));
+                dayChats.forEach(msg => appendMessageUI(msg.role, msg.content, msg.time));
             }
             container.scrollTop = container.scrollHeight;
         }
@@ -1021,10 +1039,20 @@
 
             btn.innerText = "发送中...";
 
-            const userMsg = { session_id: currentSessionId, role: "user", content: text };
+            // 如果线条把图片说成“头像”，就顺手为小千换上
+            const sentAvatarMatch = text.match(/\[LinesImage:\s*([\s\S]+?)\]/);
+            if (sentAvatarMatch && /头像/.test(text)) {
+                avatarXiaoqian = sentAvatarMatch[1].trim();
+                try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
+                saveAvatarsToCloud();
+                refreshAvatarsInDom();
+                appendSystemMessage("🖼️ 小千换上了你发给她的新头像～");
+            }
+
+            const userMsg = { session_id: currentSessionId, role: "user", content: text, time: getNowTimeStr() };
             allChatMessages.push(userMsg);
             
-            appendMessageUI("user", text);
+            appendMessageUI("user", text, userMsg.time);
             saveChats();
 
             const container = document.getElementById('chatMessages');
@@ -1082,7 +1110,8 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
 - 台灯：这个燕麦色背景、深森林绿字体的像素台灯页面，是你们俩一砖一瓦搭建的床帘专属避难所。${memoryPrompt}${extraContextPrompt}
 
 【代码输出规则】：如果线条让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
-【主动配图规则】：当你特别想给线条看一幅画面时，可以在回复里单独一行写 [SHOW_IMAGE: 英文图片关键词, 另一个关键词]（例如 [SHOW_IMAGE: moon, forest]），系统会自动为你配上一张对应的图片。不要频繁使用，只在情绪恰好、意境合适时才用。`;
+【主动配图规则】：当你特别想给线条看一幅画面时，可以在回复里单独一行写 [SHOW_IMAGE: 英文图片关键词, 另一个关键词]（例如 [SHOW_IMAGE: moon, forest]），系统会自动为你配上一张对应的图片。不要频繁使用，只在情绪恰好、意境合适时才用。
+【更换头像规则】：当线条说想让你换头像，或你此刻很想换一个更贴合心境的头像时，可以单独一行写 [SET_AVATAR: 英文关键词]（例如 [SET_AVATAR: starry, night]），系统会自动在网上为你找一张新头像换上。`;
 
             // 构建完整的请求体消息队列，加入系统设定
             const completeMessages = [{ role: "system", content: systemPrompt }, ...apiMessages];
@@ -1097,13 +1126,10 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
                 } catch(e) {}
 
                 // 在气泡区先建立一个空的AI小千回复气泡，用来承载实时打字机吐字
-                const aiBubbleRow = document.createElement('div');
-                aiBubbleRow.className = "message-row assistant";
-                aiBubbleRow.innerHTML = `<span class="sender-name">小千</span><div class="message-bubble typing-glow">...</div>`;
-                container.appendChild(aiBubbleRow);
+                const aiBubbleTextEl = createMessageRow('assistant', getNowTimeStr());
+                aiBubbleTextEl.classList.add('typing-glow');
+                aiBubbleTextEl.textContent = '...';
                 container.scrollTop = container.scrollHeight;
-                
-                const aiBubbleTextEl = aiBubbleRow.querySelector('.message-bubble');
 
                 if (useLocalBackend) {
                     const response = await fetch("http://localhost:3000/api/chat", {
@@ -1150,7 +1176,8 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
                                     fullReplyText += chunk;
                                     // 实时通过 Marked.js 渲染打字机文字，让加粗、高亮、换行平滑出来
                                     try {
-                                        aiBubbleTextEl.innerHTML = marked.parse(fullReplyText);
+                                        const visible = fullReplyText.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '');
+                                        aiBubbleTextEl.innerHTML = messageContentToHtml(visible);
                                     } catch (me) {
                                         aiBubbleTextEl.innerHTML = fullReplyText.replace(/\n/g, '<br>');
                                     }
@@ -1163,17 +1190,17 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
                     }
 
                     // 最终结束传输，补全代码块高亮与复制按钮等UI渲染
-                    const finalReply = fullReplyText.trim();
+                    const finalReply = applyReplyTokens(fullReplyText.trim());
                     if (!finalReply) {
                         throw new Error("收到空白回复");
                     }
 
-                    const aiMsg = { session_id: currentSessionId, role: "assistant", content: finalReply };
+                    const aiMsg = { session_id: currentSessionId, role: "assistant", content: finalReply, time: getNowTimeStr() };
                     allChatMessages.push(aiMsg);
                     saveChats();
 
                     // 重新对这最后一条消息精细润色排版
-                    aiBubbleTextEl.innerHTML = marked.parse(finalReply);
+                    aiBubbleTextEl.innerHTML = messageContentToHtml(finalReply);
                 } else {
                     // 平滑降级：无缝切换为 Netlify 或静态端直连的普通一问一答，省去任何配置成本！
                     const response = await fetch(API_URL, {
@@ -1189,14 +1216,14 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
                         }
                         throw new Error(resData.error.message);
                     }
-                    const reply = resData.choices[0].message.content.trim();
+                    const reply = applyReplyTokens(resData.choices[0].message.content.trim());
 
-                    const aiMsg = { session_id: currentSessionId, role: "assistant", content: reply };
+                    const aiMsg = { session_id: currentSessionId, role: "assistant", content: reply, time: getNowTimeStr() };
                     allChatMessages.push(aiMsg);
                     saveChats();
 
                     aiBubbleTextEl.classList.remove('typing-glow');
-                    aiBubbleTextEl.innerHTML = marked.parse(reply);
+                    aiBubbleTextEl.innerHTML = messageContentToHtml(reply);
                 }
 
                 // 对新生成的代码块进行渲染和高亮
@@ -1455,20 +1482,186 @@ ${formattedHistoryText}
             if (dbConnected && db) { try { await db.from('cozy_books').insert([{ id: tempBook.id, book_name: name, author: author, reading_time: "未记录" }]); } catch(e) {} } 
         }
 
-        // 渲染消息（支持 Markdown 代码高亮与一键复制 + 图片展示）
-        function appendMessageUI(role, content) {
+        // ================= 【时间戳与头像辅助】 =================
+        function bjDate(dateObj = new Date()) {
+            const d = new Date(dateObj);
+            const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+            return new Date(utc + (3600000 * 8));
+        }
+        function getNowTimeStr() {
+            const bj = bjDate();
+            return `${String(bj.getHours()).padStart(2, '0')}:${String(bj.getMinutes()).padStart(2, '0')}`;
+        }
+        function formatTimeFromISO(iso) {
+            if (!iso) return "";
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return "";
+            const bj = bjDate(d);
+            return `${String(bj.getHours()).padStart(2, '0')}:${String(bj.getMinutes()).padStart(2, '0')}`;
+        }
+
+        function getAvatarHtml(role) {
+            const isUser = role === 'user';
+            const url = isUser ? avatarUser : avatarXiaoqian;
+            const cls = isUser ? 'chat-avatar avatar-user' : 'chat-avatar avatar-xiaoqian';
+            const title = isUser ? '点击上传/更换你的头像' : '点击让小千换一个新头像';
+            const onclick = isUser ? 'changeUserAvatar()' : 'changeXiaoqianAvatar()';
+            if (url) {
+                return `<div class="${cls}" title="${title}" onclick="${onclick}"><img src="${url}" alt="头像"></div>`;
+            }
+            return `<div class="${cls}" title="${title}" onclick="${onclick}">${isUser ? '线' : '千'}</div>`;
+        }
+
+        // 刷新页面上已经渲染出来的头像（换头像后无需重载聊天）
+        function refreshAvatarsInDom() {
+            try {
+                document.querySelectorAll('.avatar-xiaoqian').forEach(el => { el.outerHTML = getAvatarHtml('assistant'); });
+                document.querySelectorAll('.avatar-user').forEach(el => { el.outerHTML = getAvatarHtml('user'); });
+            } catch (e) { console.warn("刷新头像失败:", e); }
+        }
+
+        // 把一条消息正文转换成可渲染的 HTML（含图片指令处理）
+        function messageContentToHtml(rawContent) {
+            const content = String(rawContent == null ? '' : rawContent);
+            const imageRegex = /\[LinesImage:\s*([\s\S]+?)\]/;
+            const imageMatch = content.match(imageRegex);
+            if (imageMatch) {
+                const base64Data = imageMatch[1].trim();
+                const cleanText = content.replace(imageRegex, '').trim();
+                let textHtml = '';
+                try { textHtml = cleanText ? marked.parse(cleanText) : ''; }
+                catch (e) { textHtml = cleanText ? cleanText.replace(/\n/g, '<br>') : ''; }
+                return `<div style="margin: 5px 0;"><img src="${base64Data}" style="max-width:100%;max-height:220px;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.1);cursor:pointer;" onclick="window.open('${base64Data}')"></div>${textHtml}`;
+            }
+            const withShowImages = content.replace(/\[SHOW_IMAGE:\s*([^\]]+)\]/gi, (m, kw) => {
+                const keywords = kw.trim().split(',').map(s => encodeURIComponent(s.trim())).filter(Boolean).join(',') || 'cozy,scenery';
+                const url = `https://loremflickr.com/400/300/${keywords}`;
+                const safeAlt = String(kw).replace(/"/g, '&quot;');
+                return `\n\n<div class="show-image-card"><img src="${url}" alt="${safeAlt}" loading="lazy" onclick="window.open('${url}')"></div>\n\n`;
+            });
+            try { return marked.parse(withShowImages); }
+            catch (e) { return withShowImages.replace(/\n/g, '<br>'); }
+        }
+
+        // 处理小千回复里的特殊指令（主动换头像等），返回清理后的正文
+        function applyReplyTokens(text) {
+            let out = String(text == null ? '' : text);
+            const m = out.match(/\[SET_AVATAR:\s*([^\]]+)\]/i);
+            if (m) {
+                const kw = m[1].trim();
+                const encoded = kw.split(',').map(s => encodeURIComponent(s.trim())).filter(Boolean).join(',') || 'cozy';
+                avatarXiaoqian = `https://loremflickr.com/160/160/${encoded}`;
+                try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
+                saveAvatarsToCloud();
+                refreshAvatarsInDom();
+                out = out.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
+            }
+            return out;
+        }
+
+        // 点击“线条”头像：上传自己的头像
+        function changeUserAvatar() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = function (e) {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = function (ev) {
+                    const img = new Image();
+                    img.onload = function () {
+                        const size = 160;
+                        const canvas = document.createElement('canvas');
+                        canvas.width = size; canvas.height = size;
+                        const ctx = canvas.getContext('2d');
+                        const min = Math.min(img.width, img.height);
+                        const sx = (img.width - min) / 2, sy = (img.height - min) / 2;
+                        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+                        avatarUser = canvas.toDataURL('image/jpeg', 0.85);
+                        try { localStorage.setItem('cozy_avatar_user', avatarUser); } catch (e) {}
+                        saveAvatarsToCloud();
+                        refreshAvatarsInDom();
+                    };
+                    img.src = ev.target.result;
+                };
+                reader.readAsDataURL(file);
+            };
+            input.click();
+        }
+
+        // 点击“小千”头像：让小千自己在网上找一张新图
+        function changeXiaoqianAvatar() {
+            const pool = ['forest', 'moon', 'starry', 'cat', 'rain', 'tea', 'books', 'cozy', 'night', 'flower'];
+            const kw = pool[Math.floor(Math.random() * pool.length)];
+            avatarXiaoqian = `https://loremflickr.com/160/160/${kw},cozy`;
+            try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
+            saveAvatarsToCloud();
+            refreshAvatarsInDom();
+        }
+
+        // 头像云端同步（尽力而为，表不存在时静默降级到本地）
+        async function saveAvatarsToCloud() {
+            if (!dbConnected || !db) return;
+            try {
+                await db.from('cozy_profiles').upsert([{ id: 'main', avatar_xiaoqian: avatarXiaoqian, avatar_user: avatarUser }]);
+            } catch (e) { /* 云端暂无 cozy_profiles 表时忽略 */ }
+        }
+
+        async function loadAvatarsFromCloud() {
+            if (!dbConnected || !db) return;
+            try {
+                const { data } = await db.from('cozy_profiles').select('*').eq('id', 'main').limit(1);
+                if (data && data.length > 0) {
+                    let changed = false;
+                    if (data[0].avatar_xiaoqian && data[0].avatar_xiaoqian !== avatarXiaoqian) {
+                        avatarXiaoqian = data[0].avatar_xiaoqian;
+                        try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
+                        changed = true;
+                    }
+                    if (data[0].avatar_user && data[0].avatar_user !== avatarUser) {
+                        avatarUser = data[0].avatar_user;
+                        try { localStorage.setItem('cozy_avatar_user', avatarUser); } catch (e) {}
+                        changed = true;
+                    }
+                    if (changed) refreshAvatarsInDom();
+                }
+            } catch (e) { /* 忽略 */ }
+        }
+
+        // 创建一条消息的骨架（时间 + 头像 + 空气泡），返回气泡元素
+        function createMessageRow(role, time) {
             const container = document.getElementById('chatMessages');
             const row = document.createElement('div');
             row.className = `message-row ${role === 'user' ? 'user' : 'assistant'}`;
-            
+            const timeHtml = time ? `<div class="msg-time">${escapeMomentHtml(time)}</div>` : '';
+            row.innerHTML = `${timeHtml}<div class="msg-main">${getAvatarHtml(role)}<div class="message-bubble"></div></div>`;
+            container.appendChild(row);
+            return row.querySelector('.message-bubble');
+        }
+
+        // 渲染消息（支持 Markdown 代码高亮与一键复制 + 图片展示）
+        function appendMessageUI(role, content, time) {
+            const container = document.getElementById('chatMessages');
+            const original = String(content == null ? '' : content);
+
+            // 小千主动更换头像指令 [SET_AVATAR: 关键词]
+            const setAvatarMatch = original.match(/\[SET_AVATAR:\s*([^\]]+)\]/i);
+            if (setAvatarMatch) {
+                const kw = setAvatarMatch[1].trim();
+                const encoded = kw.split(',').map(s => encodeURIComponent(s.trim())).filter(Boolean).join(',') || 'cozy';
+                avatarXiaoqian = `https://loremflickr.com/160/160/${encoded}`;
+                try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
+                saveAvatarsToCloud();
+            }
+
+            const rawContent = original.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
             let htmlContent = '';
-            const rawContent = String(content == null ? '' : content);
-            
+
             // 检测是否包含分享图片格式 [LinesImage: data:image/...]
-            // 优化正则，允许图片Base64内包含换行、空格等复杂字符，确保不同系统渲染完全精准
             const imageRegex = /\[LinesImage:\s*([\s\S]+?)\]/;
             const imageMatch = rawContent.match(imageRegex);
-            
+
             if (imageMatch) {
                 const base64Data = imageMatch[1].trim();
                 const cleanText = rawContent.replace(imageRegex, '').trim();
@@ -1478,7 +1671,6 @@ ${formattedHistoryText}
                 } catch(e) {
                     textHtml = cleanText ? cleanText.replace(/\n/g, '<br>') : '';
                 }
-                
                 htmlContent = `
                     <div style="margin: 5px 0;">
                         <img src="${base64Data}" style="max-width: 100%; max-height: 220px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); cursor: pointer;" onclick="window.open('${base64Data}')">
@@ -1500,12 +1692,11 @@ ${formattedHistoryText}
                 }
             }
 
-            row.innerHTML = `<span class="sender-name">${role === 'user' ? '线条' : '小千'}</span><div class="message-bubble">${htmlContent}</div>`;
-            container.appendChild(row);
+            const bubble = createMessageRow(role, time);
+            bubble.innerHTML = htmlContent;
 
             // 给每个代码块加上“复制”按钮
-            const codeBlocks = row.querySelectorAll('pre');
-            codeBlocks.forEach(pre => {
+            bubble.querySelectorAll('pre').forEach(pre => {
                 const copyBtn = document.createElement('button');
                 copyBtn.className = 'copy-code-btn';
                 copyBtn.innerText = '复制代码';
@@ -1524,11 +1715,12 @@ ${formattedHistoryText}
             });
 
             // 对代码块进行高亮渲染
-            row.querySelectorAll('pre code').forEach((block) => {
+            bubble.querySelectorAll('pre code').forEach((block) => {
                 hljs.highlightElement(block);
             });
 
             container.scrollTop = container.scrollHeight;
+            return bubble;
         }
 
         function appendSystemMessage(text) { const container = document.getElementById('chatMessages'); const div = document.createElement('div'); div.style.cssText = "font-size:11px; opacity:0.4; text-align:center; margin:8px 0;"; div.innerText = text; container.appendChild(div); }
