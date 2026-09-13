@@ -1368,11 +1368,12 @@ ${formattedHistoryText}
             const rawContent = String(content == null ? '' : content);
             
             // 检测是否包含分享图片格式 [LinesImage: data:image/...]
-            const imageRegex = /\[LinesImage:\s*(data:image\/[^;]+;base64,[^\]]+)\]/;
+            // 优化正则，允许图片Base64内包含换行、空格等复杂字符，确保不同系统渲染完全精准
+            const imageRegex = /\[LinesImage:\s*([\s\S]+?)\]/;
             const imageMatch = rawContent.match(imageRegex);
             
             if (imageMatch) {
-                const base64Data = imageMatch[1];
+                const base64Data = imageMatch[1].trim();
                 const cleanText = rawContent.replace(imageRegex, '').trim();
                 let textHtml = '';
                 try {
