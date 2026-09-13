@@ -667,7 +667,7 @@
 
         // 本地降级初始化存盘机制
         function loadLocalChats() {
-            loadChats(selectedDate);
+            loadChats(selectedDate).catch(e => console.warn("loadLocalChats error:", e));
         }
 
         function saveChats() {
@@ -688,7 +688,7 @@
         }
 
         function renderChatByDate(dateStr) {
-            loadChats(dateStr);
+            loadChats(dateStr).catch(e => console.warn("renderChatByDate error:", e));
         }
 
         function loadLocalTodos() {
@@ -823,9 +823,8 @@
                 }
             } catch (e) { console.warn("Background sync error, safe local-first policy active.", e); }
             
-            // 💡 特别加入：强行在同步末尾对当前选中日期执行全量重新加载渲染！这能彻底唤起最新的多端同步气泡！
-            loadChats(selectedDate);
-        }
+            // 💡 特别加入：强行在同步末尾对当前选中日期执行全量重新加载渲染！
+            loadChats(selectedDate).catch(e => console.warn("syncWithCloud final loadChats error:", e));
         }
 
         function renderDateTabs() {
