@@ -79,6 +79,12 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`📡 后端服务已在 http://localhost:${PORT} 成功运行`);
-});
+// 如果是在 Vercel 的 Serverless 环境下运行，直接导出 Express app，不执行 .listen
+if (process.env.VERCEL) {
+    module.exports = app;
+} else {
+    app.listen(PORT, () => {
+        console.log(`📡 后端服务已在 http://localhost:${PORT} 成功运行`);
+    });
+}
+
