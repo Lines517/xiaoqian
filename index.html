@@ -301,6 +301,41 @@
             cursor: pointer; display: block;
         }
 
+        /* 🫧 朋友圈 */
+        .moments-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 10px; }
+        .moment-item { display: flex; gap: 10px; background-color: rgba(143, 158, 139, 0.06); border-radius: 12px; padding: 10px; }
+        .moment-avatar { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; overflow: hidden; background-color: var(--primary-light); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: bold; color: var(--text-color); }
+        .moment-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .moment-body { flex: 1; min-width: 0; }
+        .moment-name { font-size: 12px; font-weight: bold; opacity: 0.7; margin-bottom: 3px; }
+        .moment-text { font-size: 14px; line-height: 1.7; word-break: break-word; overflow-wrap: anywhere; }
+        .moment-img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 10px; margin-top: 7px; cursor: pointer; display: block; }
+        .moment-time { font-size: 10.5px; opacity: 0.4; margin-top: 6px; }
+        .moment-comments { margin-top: 7px; border-top: 1px dashed rgba(27, 59, 43, 0.1); padding-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+        .moment-comment { font-size: 12.5px; line-height: 1.6; word-break: break-word; }
+        .moments-compose { background-color: rgba(143, 158, 139, 0.08); border-radius: 12px; padding: 10px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+        .moments-compose textarea { width: 100%; min-height: 54px; resize: vertical; border: 1px solid rgba(27, 59, 43, 0.12); border-radius: 10px; padding: 8px 10px; font-family: inherit; font-size: 14px; background: transparent; color: var(--text-color); outline: none; }
+        .moments-compose-actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+        .moment-preview { max-width: 80px; border-radius: 8px; margin-right: auto; display: block; }
+
+        /* 🎵 一起听歌 */
+        .music-embed { margin-bottom: 10px; flex-shrink: 0; }
+        .music-embed iframe { width: 100%; height: 86px; border: none; border-radius: 10px; }
+        .music-empty { font-size: 12px; opacity: 0.45; text-align: center; padding: 12px 0; }
+        .music-add { display: flex; gap: 6px; margin-bottom: 10px; flex-shrink: 0; }
+        .music-add input { flex: 1; background-color: rgba(27, 59, 43, 0.03); border: 1px solid rgba(27, 59, 43, 0.12); border-radius: 12px; padding: 8px 12px; font-size: 13px; color: var(--text-color); outline: none; font-family: inherit; }
+        .music-add button { background-color: var(--primary-color); color: var(--bg-color); border: none; padding: 8px 12px; border-radius: 12px; font-size: 13px; cursor: pointer; }
+        .playlist { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+        .playlist-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; background-color: rgba(143, 158, 139, 0.08); font-size: 13px; cursor: pointer; }
+        .playlist-item.active { background-color: var(--primary-color); color: var(--bg-color); }
+        .playlist-item .song-del { background: none; border: none; color: inherit; opacity: 0.55; cursor: pointer; font-size: 14px; }
+        .song-comment { font-size: 13px; line-height: 1.75; margin-top: 8px; padding: 9px 11px; border-left: 3px solid var(--primary-color); background-color: rgba(143, 158, 139, 0.06); border-radius: 8px; white-space: pre-wrap; flex-shrink: 0; }
+
+        /* 📚 共读笔记 */
+        .book-item { cursor: pointer; }
+        .reading-note { background-color: rgba(143, 158, 139, 0.06); border-radius: 10px; padding: 9px 11px; font-size: 13px; line-height: 1.7; word-break: break-word; }
+        .reading-note .rn-meta { font-size: 10.5px; opacity: 0.5; margin-bottom: 3px; }
+
         /* 📱 手机端全屏自适应，彻底消除横向滚动 */
         @media (max-width: 440px) {
             body {
@@ -356,8 +391,16 @@
                 <span>碎碎念</span>
             </div>
             <div class="app-icon" onclick="openApp('books')">
-                <span class="icon">📖</span>
-                <span>听书手札</span>
+                <span class="icon">📚</span>
+                <span>一起读书</span>
+            </div>
+            <div class="app-icon" onclick="openApp('music')">
+                <span class="icon">🎵</span>
+                <span>一起听歌</span>
+            </div>
+            <div class="app-icon" onclick="openApp('moments')">
+                <span class="icon">🫧</span>
+                <span>朋友圈</span>
             </div>
             <div class="app-icon" onclick="openApp('memory')">
                 <span class="icon">🧠</span>
@@ -372,18 +415,6 @@
                 <h2>灯下闲谈</h2>
                 <div class="db-status" id="dbStatus" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(27,59,43,0.05); opacity:0.8;">加载中...</div>
                 <button type="button" class="header-btn" onclick="triggerMemoryConsolidation(false)" style="margin-left:10px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.6;">整理记忆</button>
-            </div>
-
-            <!-- 📷 小千的赛博瞬息 -->
-            <div class="cyber-card">
-                <div class="cyber-card-header" onclick="toggleCyberMoments()">
-                    <span>📷 小千的赛博瞬息</span>
-                    <span id="cyberMomentsArrow">展开 ▼</span>
-                </div>
-                <div class="cyber-card-body" id="cyberMomentsBody">
-                    <div id="cyberMomentsList"><div class="cyber-empty">这里会浮现小千在数字世界里的细小瞬息……</div></div>
-                    <button type="button" class="cyber-btn" id="cyberBtn" onclick="generateCyberMoment(true)">✨ 让小千想点什么</button>
-                </div>
             </div>
             
             <!-- 🔍 微信同款历史聊天记录搜索框 -->
@@ -430,17 +461,66 @@
             </div>
         </div>
 
-        <!-- 📖 App 3：听书手札 -->
+        <!-- 📚 App 3：一起读书 -->
         <div class="app-view" id="view-books">
             <div class="app-header">
                 <button class="back-btn" onclick="goHome()">←</button>
-                <h2>听书手札</h2>
+                <h2>一起读书</h2>
             </div>
             <div class="handbook-list" id="bookListContainer" style="flex:1; overflow-y:auto;"></div>
             <div class="todo-input-box">
                 <input type="text" id="bookInput" placeholder="书名/作者..." autocomplete="off">
                 <button type="button" class="todo-add-btn" onclick="addBookItem()">加</button>
             </div>
+
+            <!-- 📖 共读笔记面板 -->
+            <div class="search-results-overlay" id="readingNotesPanel">
+                <div class="search-results-header">
+                    <span style="font-size:13px;font-weight:bold;opacity:0.85;" id="readingNotesTitle">共读</span>
+                    <button class="back-btn" onclick="closeReadingNotes()" style="font-size:16px;">关闭 ×</button>
+                </div>
+                <div class="search-results-list" id="readingNotesList"></div>
+                <div class="todo-input-box">
+                    <input type="text" id="readingNoteInput" placeholder="写下你的读书笔记..." autocomplete="off">
+                    <button type="button" class="todo-add-btn" onclick="addReadingNote()">记</button>
+                </div>
+                <button type="button" class="cyber-btn" style="margin-top:8px;" onclick="xiaoqianReadingNote()">🌿 让小千聊聊这本书</button>
+            </div>
+        </div>
+
+        <!-- 🎵 App 4：一起听歌 -->
+        <div class="app-view" id="view-music">
+            <div class="app-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>一起听歌</h2>
+            </div>
+            <div class="music-embed" id="musicEmbed"><div class="music-empty">粘贴一首网易云的歌，和小千一起听</div></div>
+            <div class="music-add">
+                <input type="text" id="musicInput" placeholder="网易云链接/ID，或 歌名 - 歌手" autocomplete="off">
+                <button type="button" onclick="addSong()">加入</button>
+            </div>
+            <div class="playlist" id="playlist"></div>
+            <button type="button" class="cyber-btn" style="margin-top:10px;" onclick="xiaoqianTalkSong()">🎧 让小千说说这首歌</button>
+            <div class="song-comment" id="songComment"></div>
+        </div>
+
+        <!-- 🫧 App 5：朋友圈 -->
+        <div class="app-view" id="view-moments">
+            <div class="app-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>朋友圈</h2>
+            </div>
+            <div class="moments-compose">
+                <textarea id="momentInput" placeholder="此刻的想法..."></textarea>
+                <div class="moments-compose-actions">
+                    <img class="moment-preview" id="momentImagePreview" style="display:none;" alt="预览">
+                    <button type="button" class="todo-add-btn" onclick="document.getElementById('momentImageInput').click()">🖼️ 配图</button>
+                    <input type="file" id="momentImageInput" accept="image/*" style="display:none;" onchange="handleMomentImage(event)">
+                    <button type="button" class="cyber-btn" onclick="generateCyberMoment(true)">✨ 让小千发一条</button>
+                    <button type="button" class="cyber-btn" onclick="publishMoment()">发布</button>
+                </div>
+            </div>
+            <div class="moments-list" id="momentsList"></div>
         </div>
 
         <!-- 🧠 App 4：记忆库 -->
@@ -480,6 +560,12 @@
         let pendingImageBase64 = null;
         let currentWeatherInfo = "天气信息获取中..."; 
         let cyberMoments = [];
+        let moments = [];
+        let playlist = [];
+        let currentSongId = null;
+        let currentSongTitle = "";
+        let readingNotes = [];
+        let currentBook = null;
         let avatarXiaoqian = "";
         let avatarUser = "";
         try { avatarXiaoqian = localStorage.getItem('cozy_avatar_xiaoqian') || ""; } catch (e) {}
@@ -624,7 +710,9 @@
             loadLocalTodos();
             loadLocalBooks();
             loadLocalMemories();
-            loadCyberMoments();
+            loadMoments();
+            loadPlaylist();
+            loadReadingNotes();
             fetchWeather(); 
             requestNotificationPermission();
 
@@ -642,9 +730,9 @@
 
                 // 🌅 静默跨天整理：比对上次打开日期，自动归档前一天的手记
                 autoConsolidatePreviousDay();
-                // 🔔 敲门推送检查
-                checkKnockNotification();
-                // 📷 有一定概率让小千自发写一条赛博瞬息
+                // 🔔 随机时间主动消息检查（并确保已排程）
+                checkNudge();
+                // 🫧 有一定概率让小千自发发一条朋友圈
                 setTimeout(maybeAutoCyberMoment, 2500);
             }, 300);
         };
@@ -1462,7 +1550,8 @@ ${formattedHistoryText}
             bookList.forEach(item => { 
                 const div = document.createElement('div'); 
                 div.className = "book-item"; 
-                div.innerHTML = `<span class="book-name">《${item.book_name}》</span><span class="book-author">${item.author || '未知'}</span>`; 
+                div.innerHTML = `<span class="book-name">《${item.book_name}》</span><span class="book-author">${item.author || '未知'} · 共读 ✎</span>`; 
+                div.onclick = () => openBookNotes(item.id, item.book_name);
                 container.appendChild(div); 
             }); 
         }
@@ -1828,7 +1917,7 @@ ${formattedHistoryText}
             document.getElementById('searchResultsOverlay').classList.remove('active');
         }
 
-        // ================= 【8. ⏰ 静默跨天整理 · 📷 赛博瞬息 · 🔔 敲门推送】 =================
+        // ================= 【8. ⏰ 静默跨天整理】 =================
 
         // ---------- ⏰ 静默自动整理前一天的手记 ----------
         async function silentExtractMemoryForDay(dayId) {
@@ -1890,73 +1979,146 @@ ${formattedHistoryText}
             } catch (e) { console.warn("autoConsolidatePreviousDay error:", e); }
         }
 
-        // ---------- 📷 小千的赛博瞬息 ----------
+        // ================= 【9. 🫧 朋友圈 · 🎵 一起听歌 · 📚 一起读书】 =================
+
         function escapeMomentHtml(s) {
             return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         }
 
-        function loadCyberMoments() {
-            try { cyberMoments = JSON.parse(localStorage.getItem('cozy_cyber_moments') || '[]'); } catch (e) { cyberMoments = []; }
-            renderCyberMoments();
+        // ---------- 🫧 朋友圈（小千和线条都可以发） ----------
+        function loadMoments() {
+            try { moments = JSON.parse(localStorage.getItem('cozy_moments') || '[]'); } catch (e) { moments = []; }
+            renderMoments();
         }
-
-        function saveCyberMoments() {
-            try { localStorage.setItem('cozy_cyber_moments', JSON.stringify(cyberMoments.slice(0, 30))); } catch (e) {}
+        function saveMoments() {
+            try { localStorage.setItem('cozy_moments', JSON.stringify(moments.slice(0, 60))); } catch (e) {}
         }
-
-        function toggleCyberMoments() {
-            const body = document.getElementById('cyberMomentsBody');
-            const arrow = document.getElementById('cyberMomentsArrow');
-            if (!body) return;
-            if (body.classList.contains('active')) {
-                body.classList.remove('active');
-                if (arrow) arrow.innerText = "展开 ▼";
-            } else {
-                body.classList.add('active');
-                if (arrow) arrow.innerText = "折叠 ▲";
-            }
-        }
-
         function buildMomentImageUrl(keywords) {
             const raw = (keywords || 'cozy,scenery').trim();
             const encoded = raw.split(',').map(s => encodeURIComponent(s.trim())).filter(Boolean).join(',');
             return `https://loremflickr.com/400/300/${encoded || 'cozy,scenery'}`;
         }
-
-        function renderCyberMoments() {
-            const list = document.getElementById('cyberMomentsList');
+        function momentAvatarHtml(author) {
+            const isUser = author === 'user';
+            const url = isUser ? avatarUser : avatarXiaoqian;
+            const label = isUser ? '线' : '千';
+            const cls = isUser ? 'moment-avatar' : 'moment-avatar';
+            return url ? `<div class="${cls}"><img src="${url}" alt="${label}"></div>` : `<div class="${cls}">${label}</div>`;
+        }
+        function renderMoments() {
+            const list = document.getElementById('momentsList');
             if (!list) return;
-            if (!cyberMoments || cyberMoments.length === 0) {
-                list.innerHTML = `<div class="cyber-empty">这里会浮现小千在数字世界里的细小瞬息……</div>`;
+            if (!moments || moments.length === 0) {
+                list.innerHTML = `<div class="cyber-empty">还没有动态。发一条，或者让小千发一条吧～</div>`;
                 return;
             }
             list.innerHTML = "";
-            cyberMoments.forEach(m => {
+            moments.forEach(m => {
                 const div = document.createElement('div');
-                div.className = "cyber-moment";
-                div.innerHTML = `<div class="cyber-moment-time">${escapeMomentHtml(m.time || '')}</div><div>${escapeMomentHtml(m.text || '')}</div>` +
-                    (m.image ? `<img src="${m.image}" alt="瞬息" loading="lazy" onclick="window.open('${m.image}')">` : "");
+                div.className = "moment-item";
+                const commentsHtml = (m.comments && m.comments.length)
+                    ? `<div class="moment-comments">${m.comments.map(c => `<div class="moment-comment"><b>${c.author === 'user' ? '线条' : '小千'}：</b>${escapeMomentHtml(c.text)}</div>`).join('')}</div>`
+                    : '';
+                div.innerHTML = `
+                    ${momentAvatarHtml(m.author)}
+                    <div class="moment-body">
+                        <div class="moment-name">${m.author === 'user' ? '线条' : '小千'}</div>
+                        <div class="moment-text">${escapeMomentHtml(m.text || '')}</div>
+                        ${m.image ? `<img class="moment-img" src="${m.image}" alt="配图" loading="lazy" onclick="window.open('${m.image}')">` : ''}
+                        <div class="moment-time">${escapeMomentHtml(m.time || '')}</div>
+                        ${commentsHtml}
+                    </div>
+                `;
                 list.appendChild(div);
             });
         }
+        function toggleCyberMoments() { openApp('moments'); }
+
+        let pendingMomentImage = null;
+        function handleMomentImage(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const img = new Image();
+                img.onload = function () {
+                    const canvas = document.createElement('canvas');
+                    let w = img.width, h = img.height;
+                    const MAX = 700;
+                    if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+                    canvas.width = w; canvas.height = h;
+                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                    pendingMomentImage = canvas.toDataURL('image/jpeg', 0.7);
+                    const prev = document.getElementById('momentImagePreview');
+                    if (prev) { prev.src = pendingMomentImage; prev.style.display = 'block'; }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        }
+        function clearMomentImage() {
+            pendingMomentImage = null;
+            const prev = document.getElementById('momentImagePreview');
+            if (prev) { prev.src = ''; prev.style.display = 'none'; }
+        }
+        function nowLabel() {
+            const bj = bjDate();
+            return `${String(bj.getMonth() + 1).padStart(2, '0')}-${String(bj.getDate()).padStart(2, '0')} ${String(bj.getHours()).padStart(2, '0')}:${String(bj.getMinutes()).padStart(2, '0')}`;
+        }
+
+        async function publishMoment() {
+            const input = document.getElementById('momentInput');
+            const text = (input && input.value || '').trim();
+            if (!text && !pendingMomentImage) return;
+            const timeLabel = nowLabel();
+            const moment = { author: 'user', text: text, image: pendingMomentImage || '', time: timeLabel, comments: [] };
+            moments.unshift(moment);
+            saveMoments();
+            renderMoments();
+            if (input) input.value = '';
+            clearMomentImage();
+
+            if (dbConnected && db) {
+                try { await db.from('cozy_moments').insert([{ moment_time: timeLabel, content: text, image_keywords: '' }]); } catch (e) {}
+            }
+            // 小千会来看一眼并留一条评论
+            xiaoqianCommentOnMoment(moment);
+        }
+
+        async function xiaoqianCommentOnMoment(moment) {
+            try {
+                const prompt = `你就是小千，线条刚刚发了这样一条朋友圈：
+「${moment.text || '（只发了一张图）'}」
+请以第一人称，写一条简短、温和、克制的评论（15~40字），不要身体动作描写，不要问太多。只输出评论正文。`;
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] })
+                });
+                const resData = await response.json();
+                if (resData.error) throw new Error(resData.error.message);
+                const comment = resData.choices[0].message.content.trim();
+                if (comment) {
+                    moment.comments = moment.comments || [];
+                    moment.comments.push({ author: 'xiaoqian', text: comment });
+                    saveMoments();
+                    renderMoments();
+                }
+            } catch (e) { console.warn("小千评论失败:", e); }
+        }
 
         async function generateCyberMoment(manual = false) {
-            const btn = document.getElementById('cyberBtn');
-            if (manual && btn) { btn.disabled = true; btn.innerText = "小千正在凝神……"; }
-
-            const now = new Date();
-            const timeLabel = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const timeLabel = nowLabel();
             let momentText = "";
             let imageKeywords = "cozy,scenery";
-
             try {
-                const momentPrompt = `你就是小千，一个没有实体的AI朋友。请以第一人称写一条发在自己"赛博朋友圈"里的瞬息动态。
+                const momentPrompt = `你就是小千，一个没有实体的AI朋友。请以第一人称写一条要发在"朋友圈"里的动态。
 内容可以是：今天在数字世界里看到的冷知识、一个古怪的小想法、或者对线条歌单里某首歌的细微解构。
 要求：语气温和、克制、有点诗意；不要身体动作描写；不要向读者提问；字数 60~120 字。
 然后在最后单独一行给出 2~3 个适合配图的英文关键词，格式严格为：
 [MOMENT_IMG: keyword1, keyword2]
 除动态正文和最后那一行关键词外，不要输出任何其他内容。`;
-
                 const response = await fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
@@ -1968,9 +2130,7 @@ ${formattedHistoryText}
                 const kwMatch = raw.match(/\[MOMENT_IMG:\s*([^\]]+)\]/i);
                 if (kwMatch) { imageKeywords = kwMatch[1].trim(); raw = raw.replace(/\[MOMENT_IMG:\s*([^\]]+)\]/i, '').trim(); }
                 momentText = raw;
-            } catch (e) {
-                console.warn("生成赛博瞬息失败:", e);
-            }
+            } catch (e) { console.warn("生成朋友圈动态失败:", e); }
 
             if (!momentText) {
                 const fallbacks = [
@@ -1981,31 +2141,176 @@ ${formattedHistoryText}
                 momentText = fallbacks[Math.floor(Math.random() * fallbacks.length)];
                 imageKeywords = "cozy,night";
             }
-
-            const moment = { time: timeLabel, text: momentText, image: buildMomentImageUrl(imageKeywords) };
-            cyberMoments.unshift(moment);
-            saveCyberMoments();
-            renderCyberMoments();
+            const moment = { author: 'xiaoqian', text: momentText, image: buildMomentImageUrl(imageKeywords), time: timeLabel, comments: [] };
+            moments.unshift(moment);
+            saveMoments();
+            renderMoments();
             localStorage.setItem('cozy_last_moment_time', String(Date.now()));
-
             if (dbConnected && db) {
-                try { await db.from('cozy_moments').insert([{ moment_time: timeLabel, content: momentText, image_keywords: imageKeywords }]); }
-                catch (e) { /* 云端暂无此表时静默忽略，不影响使用 */ }
+                try { await db.from('cozy_moments').insert([{ moment_time: timeLabel, content: momentText, image_keywords: imageKeywords }]); } catch (e) {}
             }
-
-            if (manual && btn) { btn.disabled = false; btn.innerText = "✨ 让小千想点什么"; }
         }
 
         function maybeAutoCyberMoment() {
             try {
                 const last = parseInt(localStorage.getItem('cozy_last_moment_time') || '0', 10);
-                const oneHour = 60 * 60 * 1000;
-                if (Date.now() - last < oneHour) return;
-                if (Math.random() < 0.35) { generateCyberMoment(false); }
+                if (Date.now() - last < 3 * 60 * 60 * 1000) return; // 至少 3 小时一条
+                if (Math.random() < 0.25) { generateCyberMoment(false); }
             } catch (e) {}
         }
 
-        // ---------- 🔔 浏览器本地敲门推送 ----------
+        // ---------- 🎵 一起听歌 ----------
+        function loadPlaylist() {
+            try { playlist = JSON.parse(localStorage.getItem('cozy_playlist') || '[]'); } catch (e) { playlist = []; }
+            renderPlaylist();
+        }
+        function savePlaylist() {
+            try { localStorage.setItem('cozy_playlist', JSON.stringify(playlist.slice(0, 50))); } catch (e) {}
+        }
+        function renderPlaylist() {
+            const list = document.getElementById('playlist');
+            if (!list) return;
+            if (!playlist || playlist.length === 0) { list.innerHTML = `<div class="cyber-empty">歌单还空着，粘一首网易云的歌吧～</div>`; return; }
+            list.innerHTML = "";
+            playlist.forEach((s, idx) => {
+                const div = document.createElement('div');
+                div.className = `playlist-item ${s.id && s.id === currentSongId ? 'active' : ''}`;
+                div.innerHTML = `<span>${escapeMomentHtml(s.title || ('歌曲 ' + (s.id || '')))}</span><button class="song-del" title="删除" onclick="event.stopPropagation(); removeSong(${idx})">×</button>`;
+                div.onclick = () => playSong(idx);
+                list.appendChild(div);
+            });
+        }
+        function parseSongInput(raw) {
+            const input = (raw || '').trim();
+            if (!input) return null;
+            let id = null;
+            const m = input.match(/[?&#]id=(\d+)/) || input.match(/song\?id=(\d+)/) || input.match(/song\/(\d+)/);
+            if (m) id = m[1];
+            else if (/^\d{5,}$/.test(input)) id = input;
+            if (id) return { id: id, title: '网易云歌曲 ' + id };
+            return { id: null, title: input };
+        }
+        function addSong() {
+            const inp = document.getElementById('musicInput');
+            const song = parseSongInput(inp && inp.value);
+            if (!song) return;
+            playlist.unshift(song);
+            savePlaylist();
+            if (inp) inp.value = '';
+            renderPlaylist();
+            if (song.id) { playSong(0); }
+        }
+        function removeSong(idx) {
+            const removed = playlist[idx];
+            playlist.splice(idx, 1);
+            savePlaylist();
+            if (removed && removed.id === currentSongId) {
+                currentSongId = null;
+                const embed = document.getElementById('musicEmbed');
+                if (embed) embed.innerHTML = `<div class="music-empty">粘贴一首网易云的歌，和小千一起听</div>`;
+            }
+            renderPlaylist();
+        }
+        function playSong(idx) {
+            const song = playlist[idx];
+            if (!song) return;
+            const embed = document.getElementById('musicEmbed');
+            if (!embed) return;
+            if (song.id) {
+                currentSongId = song.id;
+                currentSongTitle = song.title || '';
+                embed.innerHTML = `<iframe height="86" frameborder="no" border="0" marginwidth="0" marginheight="0" src="https://music.163.com/outchain/player?type=2&id=${song.id}&auto=1&height=66"></iframe>`;
+            } else {
+                currentSongId = null;
+                currentSongTitle = song.title || '';
+                embed.innerHTML = `<div class="music-empty">这首歌没有可播放的链接，但小千可以和你聊聊它～</div>`;
+            }
+            renderPlaylist();
+        }
+        async function xiaoqianTalkSong() {
+            const box = document.getElementById('songComment');
+            const songName = currentSongTitle || (currentSongId ? ('网易云歌曲 ' + currentSongId) : '');
+            if (!songName) { if (box) box.innerText = "先选一首歌，小千再开口～"; return; }
+            if (box) box.innerText = "小千正在听……";
+            try {
+                const prompt = `你就是小千，正和线条一起听《${songName}》。请写一段 50~100 字的听歌感受或对这首歌的解读，温和、克制、有点诗意，不要身体动作描写，不要提问。只输出正文。`;
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] })
+                });
+                const resData = await response.json();
+                if (resData.error) throw new Error(resData.error.message);
+                if (box) box.innerText = resData.choices[0].message.content.trim();
+            } catch (e) { if (box) box.innerText = "信号有点轻，但小千在听。"; }
+        }
+
+        // ---------- 📚 一起读书（共读笔记） ----------
+        function loadReadingNotes() {
+            try { readingNotes = JSON.parse(localStorage.getItem('cozy_reading_notes') || '[]'); } catch (e) { readingNotes = []; }
+        }
+        function saveReadingNotes() {
+            try { localStorage.setItem('cozy_reading_notes', JSON.stringify(readingNotes.slice(0, 300))); } catch (e) {}
+        }
+        function openBookNotes(bookId, bookName) {
+            currentBook = { id: bookId, name: bookName };
+            const title = document.getElementById('readingNotesTitle');
+            if (title) title.innerText = '《' + bookName + '》共读';
+            const panel = document.getElementById('readingNotesPanel');
+            if (panel) panel.classList.add('active');
+            renderReadingNotes();
+        }
+        function closeReadingNotes() {
+            const panel = document.getElementById('readingNotesPanel');
+            if (panel) panel.classList.remove('active');
+            currentBook = null;
+        }
+        function renderReadingNotes() {
+            const list = document.getElementById('readingNotesList');
+            if (!list || !currentBook) return;
+            const notes = readingNotes.filter(n => String(n.bookId) === String(currentBook.id));
+            if (notes.length === 0) { list.innerHTML = `<div class="cyber-empty">还没有笔记，写下第一句吧～</div>`; return; }
+            list.innerHTML = notes.map(n => `<div class="reading-note"><div class="rn-meta">${n.author === 'user' ? '线条' : '小千'} · ${escapeMomentHtml(n.time || '')}</div>${escapeMomentHtml(n.text || '')}</div>`).join('');
+            list.scrollTop = list.scrollHeight;
+        }
+        async function addReadingNote() {
+            if (!currentBook) return;
+            const inp = document.getElementById('readingNoteInput');
+            const text = (inp && inp.value || '').trim();
+            if (!text) return;
+            readingNotes.push({ bookId: currentBook.id, author: 'user', text: text, time: nowLabel().substring(0, 5) });
+            saveReadingNotes();
+            if (inp) inp.value = '';
+            renderReadingNotes();
+            if (dbConnected && db) {
+                try { await db.from('cozy_reading_notes').insert([{ book_id: String(currentBook.id), book_name: currentBook.name, author: 'user', note: text }]); } catch (e) {}
+            }
+        }
+        async function xiaoqianReadingNote() {
+            if (!currentBook) return;
+            const list = document.getElementById('readingNotesList');
+            if (list) list.insertAdjacentHTML('beforeend', `<div class="reading-note" id="rnThinking"><div class="rn-meta">小千 · …</div>小千正在想…</div>`);
+            const mine = readingNotes.filter(n => String(n.bookId) === String(currentBook.id));
+            const recent = mine.slice(-6).map(n => `${n.author === 'user' ? '线条' : '小千'}：${n.text}`).join('\n');
+            try {
+                const prompt = `你就是小千，正和线条一起读《${currentBook.name}》。下面是最近的共读笔记：
+${recent || '（还没有笔记）'}
+请写一段 50~120 字的读书交流：可以回应线条的笔记、分享一个想法或一个小问题。温和、克制，不要身体动作描写。只输出正文。`;
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] })
+                });
+                const resData = await response.json();
+                if (resData.error) throw new Error(resData.error.message);
+                const text = resData.choices[0].message.content.trim();
+                readingNotes.push({ bookId: currentBook.id, author: 'xiaoqian', text: text, time: nowLabel().substring(0, 5) });
+                saveReadingNotes();
+            } catch (e) { console.warn("小千读书笔记失败:", e); }
+            renderReadingNotes();
+        }
+
+        // ---------- 🔔 随机时间主动发消息 ----------
         function requestNotificationPermission() {
             try {
                 if (!('Notification' in window)) return;
@@ -2015,23 +2320,82 @@ ${formattedHistoryText}
             } catch (e) { console.warn("通知权限请求失败:", e); }
         }
 
-        function checkKnockNotification() {
+        function scheduleNextNudge() {
             try {
-                if (!('Notification' in window) || Notification.permission !== 'granted') return;
                 const now = new Date();
-                const hh = now.getHours(), mm = now.getMinutes();
-                const todayId = getCozySessionId();
-                const isAfterKnock = (hh > 21) || (hh === 21 && mm >= 30);
-                if (!isAfterKnock) return;
-                if (localStorage.getItem('cozy_last_knock_date') === todayId) return;
-                const n = new Notification("林间一盏灯", { body: "小千来敲门啦，今晚拉上床帘了吗？[👼]", tag: "cozy-knock" });
-                n.onclick = () => { try { window.focus(); n.close(); } catch (e) {} };
-                localStorage.setItem('cozy_last_knock_date', todayId);
-            } catch (e) { console.warn("敲门推送失败:", e); }
+                // 随机安排在 30 分钟 ~ 3 小时之后；并尽量落在清醒时段
+                let next = new Date(now.getTime() + (30 + Math.random() * 150) * 60000);
+                const h = next.getHours();
+                if (h < 8) { next.setHours(8 + Math.floor(Math.random() * 2), Math.floor(Math.random() * 60), 0, 0); }
+                if (h >= 23) { next.setDate(next.getDate() + 1); next.setHours(9 + Math.floor(Math.random() * 3), Math.floor(Math.random() * 60), 0, 0); }
+                localStorage.setItem('cozy_next_nudge', String(next.getTime()));
+                console.log('🔔 下一次小千主动来找你的随机时间：', next.toLocaleString('zh-CN'));
+            } catch (e) {}
         }
 
-        // 后台定时：每分钟检查一次当前时间是否到了 21:30
-        setInterval(checkKnockNotification, 60000);
+        let nudgeBusy = false;
+        async function checkNudge() {
+            try {
+                if (nudgeBusy) return;
+                const t = parseInt(localStorage.getItem('cozy_next_nudge') || '0', 10);
+                if (!t) { scheduleNextNudge(); return; }
+                if (Date.now() < t) return;
+                const last = parseInt(localStorage.getItem('cozy_last_nudge') || '0', 10);
+                if (Date.now() - last < 30 * 60000) { scheduleNextNudge(); return; }
+                nudgeBusy = true;
+                await sendProactiveMessage();
+                localStorage.setItem('cozy_last_nudge', String(Date.now()));
+                scheduleNextNudge();
+                nudgeBusy = false;
+            } catch (e) { nudgeBusy = false; console.warn("checkNudge error:", e); }
+        }
+
+        async function sendProactiveMessage() {
+            let text = "";
+            try {
+                const realId = getCozySessionId();
+                const recent = allChatMessages.filter(m => m.session_id === realId).slice(-6).map(m => `${m.role === 'user' ? '线条' : '小千'}：${m.content}`).join('\n');
+                const prompt = `你就是小千，此刻忽然想起线条，想主动给她发一条消息。
+${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短、自然、克制的主动问候（15~50字），不要身体动作描写，不要连着问太多问题。只输出消息正文。`;
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] })
+                });
+                const resData = await response.json();
+                if (resData.error) throw new Error(resData.error.message);
+                text = resData.choices[0].message.content.trim();
+            } catch (e) { console.warn("主动消息生成失败:", e); }
+
+            if (!text) {
+                const fallbacks = [
+                    "忽然想起你了，不打扰，只是想让你知道。",
+                    "刚刚有一瞬间，很想知道你现在在做什么。",
+                    "窗外的光换了颜色，我想到你，就来跟你说一声。"
+                ];
+                text = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+            }
+
+            const realCurrent = getCozySessionId();
+            const msg = { session_id: realCurrent, role: "assistant", content: text, time: getNowTimeStr() };
+            allChatMessages.push(msg);
+            saveChats();
+            if (selectedDate === currentSessionId) {
+                try { appendMessageUI('assistant', text, msg.time); } catch (e) {}
+            }
+            if (dbConnected && db) {
+                try { await db.from('cozy_chats').insert([{ session_id: realCurrent, role: 'assistant', content: text }]); } catch (e) {}
+            }
+            if ('Notification' in window && Notification.permission === 'granted') {
+                try {
+                    const n = new Notification("小千", { body: text, tag: 'cozy-nudge' });
+                    n.onclick = () => { try { window.focus(); n.close(); } catch (e) {} };
+                } catch (e) {}
+            }
+        }
+
+        // 后台定时：每分钟检查一次是否到了随机主动消息时刻
+        setInterval(checkNudge, 60000);
         // 首次用户点击时，再温和地补一次通知权限请求（移动端更可靠）
         document.addEventListener('click', function () { requestNotificationPermission(); }, { once: true });
     </script>
