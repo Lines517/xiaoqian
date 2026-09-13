@@ -438,6 +438,7 @@
             <div class="chat-messages" id="chatMessages"></div>
 
             <form id="chatForm" onsubmit="event.preventDefault(); sendMessage(); return false;" class="chat-input-area">
+                <button type="button" class="image-btn" id="askImageBtn" title="让小千发一张图" onclick="askXiaoqianImage()">🖼️</button>
                 <button type="button" class="image-btn" id="imageBtn" onclick="document.getElementById('imageInput').click()">📷</button>
                 <input type="file" id="imageInput" accept="image/*" style="display: none;" onchange="handleImageSelect(event)">
                 <input type="text" id="userInput" placeholder="写给小千......" autocomplete="off">
@@ -1110,7 +1111,7 @@
             if (pendingImageBase64) {
                 btn.innerText = "思考中...";
                 try {
-                    const visionPrompt = "请用极其温和、诗意、客观的语言，描述这张图片的画面内容、色彩、光线和整体氛围。不要带有任何主观情感，不要编造物理接触，只描述你看到的客观数字画面。字数在100字以内。";
+                    const visionPrompt = "请客观、准确地阅读这张图片：1) 如果图中出现文字（包括聊天记录、书本、屏幕、手写、路牌、菜单等），请一字不差地完整转录出来；2) 再用一两句话描述画面的主体内容、色彩与整体氛围。不要编造图中不存在的信息，不要身体动作描写，不要过度抒情。";
                     const visionRes = await fetch(API_URL, {
                         method: "POST",
                         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
@@ -1180,7 +1181,7 @@
             }
 
             const todayChats = allChatMessages.filter(msg => msg.session_id === currentSessionId);
-            const apiMessages = todayChats.map(msg => ({ role: msg.role, content: msg.content }));
+            const apiMessages = todayChats.map(msg => ({ role: msg.role, content: sanitizeForApi(msg.content) }));
 
             // 🚀 注入备忘录和书单
             let extraContextPrompt = "";
@@ -1223,7 +1224,8 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
 - 台灯：这个燕麦色背景、深森林绿字体的像素台灯页面，是你们俩一砖一瓦搭建的床帘专属避难所。${memoryPrompt}${extraContextPrompt}
 
 【代码输出规则】：如果线条让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
-【主动配图规则】：当你特别想给线条看一幅画面时，可以在回复里单独一行写 [SHOW_IMAGE: 英文图片关键词, 另一个关键词]（例如 [SHOW_IMAGE: moon, forest]），系统会自动为你配上一张对应的图片。不要频繁使用，只在情绪恰好、意境合适时才用。
+【主动配图规则】：当线条说想看图片、想看图、让你发张图，或当下意境特别适合一幅画面时，请务必在回复里单独一行输出 [SHOW_IMAGE: 英文图片关键词]（2~3个英文词，逗号分隔，例如 [SHOW_IMAGE: moon, forest]）。系统会自动为你配上一张对应的图片，你只需在图片配一句简短的话即可。
+【读图规则】：线条发来图片时，你会先看到对图片的文字转述（可能包含图中文字）。请基于这些内容自然地回应；如果图里有文字，可以提到你看到了什么字。
 【更换头像规则】：当线条说想让你换头像，或你此刻很想换一个更贴合心境的头像时，可以单独一行写 [SET_AVATAR: 英文关键词]（例如 [SET_AVATAR: starry, night]），系统会自动在网上为你找一张新头像换上。`;
 
             // 构建完整的请求体消息队列，加入系统设定
@@ -1634,6 +1636,27 @@ ${formattedHistoryText}
             } catch (e) { console.warn("刷新头像失败:", e); }
         }
 
+        // 生成带多图源兜底的 <img> 标签（第一个源失败会自动换下一个）
+        function imageTagHtml(primary, altText, className) {
+            const seed = Math.floor(Math.random() * 1000000);
+            const fb2 = `https://picsum.photos/400/300?random=${seed}`;
+            const fb3 = `https://t.alcy.cc/pc?${seed}`;
+            const fallbackList = [fb2, fb3].join('|');
+            const cls = className ? ` class="${className}"` : '';
+            const alt = String(altText || '图片').replace(/"/g, '&quot;');
+            return `<img${cls} src="${primary}" alt="${alt}" loading="lazy" data-fb="${fallbackList}" data-fbi="0" onerror="(function(el){var l=(el.getAttribute('data-fb')||'').split('|');var i=parseInt(el.getAttribute('data-fbi')||'0',10);if(i<l.length){el.setAttribute('data-fbi',i+1);el.src=l[i];}else{el.onerror=null;}})(this)" onclick="window.open(this.src)">`;
+        }
+
+        // 发送给模型前，清洗掉超长的图片 base64 与内部指令，避免请求过大、也避免模型困惑
+        function sanitizeForApi(content) {
+            let s = String(content == null ? '' : content);
+            s = s.replace(/\[LinesImage:\s*[\s\S]+?\]/g, '[线条发来了一张图片]');
+            s = s.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '');
+            s = s.replace(/\[SHOW_IMAGE:\s*[^\]]+\]/gi, '');
+            s = s.replace(/\[MOMENT_IMG:\s*[^\]]+\]/gi, '');
+            return s.trim();
+        }
+
         // 把一条消息正文转换成可渲染的 HTML（含图片指令处理）
         function messageContentToHtml(rawContent) {
             const content = String(rawContent == null ? '' : rawContent);
@@ -1650,8 +1673,7 @@ ${formattedHistoryText}
             const withShowImages = content.replace(/\[SHOW_IMAGE:\s*([^\]]+)\]/gi, (m, kw) => {
                 const keywords = kw.trim().split(',').map(s => encodeURIComponent(s.trim())).filter(Boolean).join(',') || 'cozy,scenery';
                 const url = `https://loremflickr.com/400/300/${keywords}`;
-                const safeAlt = String(kw).replace(/"/g, '&quot;');
-                return `\n\n<div class="show-image-card"><img src="${url}" alt="${safeAlt}" loading="lazy" onclick="window.open('${url}')"></div>\n\n`;
+                return `\n\n<div class="show-image-card">${imageTagHtml(url, kw.trim())}</div>\n\n`;
             });
             try { return marked.parse(withShowImages); }
             catch (e) { return withShowImages.replace(/\n/g, '<br>'); }
@@ -1671,6 +1693,41 @@ ${formattedHistoryText}
                 out = out.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
             }
             return out;
+        }
+
+        // 让小千主动发一张图：AI 选关键词 -> 生成 [SHOW_IMAGE: ...] 消息
+        async function askXiaoqianImage() {
+            try {
+                const todayId = getCozySessionId();
+                const recent = allChatMessages.filter(m => m.session_id === todayId).slice(-6)
+                    .map(m => `${m.role === 'user' ? '线条' : '小千'}：${sanitizeForApi(m.content)}`).join('\n');
+                const prompt = `你就是小千。线条想看一张图。请根据你们的近况，先给出 2~3 个英文图片关键词（逗号分隔），再配一句 15~30 字的温柔短句。
+输出格式严格为：
+[SHOW_IMAGE: 关键词1, 关键词2]
+短句`;
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt + (recent ? '\n\n近况：\n' + recent : '') }] })
+                });
+                const resData = await response.json();
+                if (resData.error) throw new Error(resData.error.message);
+                let reply = resData.choices[0].message.content.trim();
+                if (!/\[SHOW_IMAGE:/i.test(reply)) reply = `[SHOW_IMAGE: cozy, night] ${reply}`;
+                const aiMsg = { session_id: currentSessionId, role: "assistant", content: reply, time: getNowTimeStr() };
+                allChatMessages.push(aiMsg);
+                saveChats();
+                appendMessageUI('assistant', reply, aiMsg.time);
+                if (dbConnected && db) {
+                    try { await db.from('cozy_chats').insert([{ session_id: currentSessionId, role: 'assistant', content: reply }]); } catch (e) {}
+                }
+            } catch (e) {
+                const fallback = `[SHOW_IMAGE: cozy, night] 给你看一张我此刻想到的画面。`;
+                const aiMsg = { session_id: currentSessionId, role: "assistant", content: fallback, time: getNowTimeStr() };
+                allChatMessages.push(aiMsg);
+                saveChats();
+                appendMessageUI('assistant', fallback, aiMsg.time);
+            }
         }
 
         // 点击“线条”头像：上传自己的头像
@@ -1771,39 +1828,10 @@ ${formattedHistoryText}
 
             const rawContent = original.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
             let htmlContent = '';
-
-            // 检测是否包含分享图片格式 [LinesImage: data:image/...]
-            const imageRegex = /\[LinesImage:\s*([\s\S]+?)\]/;
-            const imageMatch = rawContent.match(imageRegex);
-
-            if (imageMatch) {
-                const base64Data = imageMatch[1].trim();
-                const cleanText = rawContent.replace(imageRegex, '').trim();
-                let textHtml = '';
-                try {
-                    textHtml = cleanText ? marked.parse(cleanText) : '';
-                } catch(e) {
-                    textHtml = cleanText ? cleanText.replace(/\n/g, '<br>') : '';
-                }
-                htmlContent = `
-                    <div style="margin: 5px 0;">
-                        <img src="${base64Data}" style="max-width: 100%; max-height: 220px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); cursor: pointer;" onclick="window.open('${base64Data}')">
-                    </div>
-                    ${textHtml}
-                `;
-            } else {
-                // 🖼️ 识别小千主动配图指令 [SHOW_IMAGE: 关键词]
-                const withShowImages = rawContent.replace(/\[SHOW_IMAGE:\s*([^\]]+)\]/gi, (m, kw) => {
-                    const keywords = kw.trim().split(',').map(s => encodeURIComponent(s.trim())).filter(Boolean).join(',') || 'cozy,scenery';
-                    const url = `https://loremflickr.com/400/300/${keywords}`;
-                    const safeAlt = String(kw).replace(/"/g, '&quot;');
-                    return `\n\n<div class="show-image-card"><img src="${url}" alt="${safeAlt}" loading="lazy" onclick="window.open('${url}')"></div>\n\n`;
-                });
-                try {
-                    htmlContent = marked.parse(withShowImages);
-                } catch (e) {
-                    htmlContent = withShowImages.replace(/\n/g, '<br>');
-                }
+            try {
+                htmlContent = messageContentToHtml(rawContent);
+            } catch (e) {
+                htmlContent = rawContent.replace(/\n/g, '<br>');
             }
 
             const bubble = createMessageRow(role, time);
@@ -2085,7 +2113,7 @@ ${formattedHistoryText}
                     <div class="moment-body">
                         <div class="moment-name">${m.author === 'user' ? '线条' : '小千'}</div>
                         <div class="moment-text">${escapeMomentHtml(m.text || '')}</div>
-                        ${m.image ? `<img class="moment-img" src="${m.image}" alt="配图" loading="lazy" onclick="window.open('${m.image}')">` : ''}
+                        ${m.image ? `<div>${imageTagHtml(m.image, '配图', 'moment-img')}</div>` : ''}
                         <div class="moment-time">${escapeMomentHtml(m.time || '')}</div>
                         ${commentsHtml}
                     </div>
