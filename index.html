@@ -414,7 +414,8 @@
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>灯下闲谈</h2>
                 <div class="db-status" id="dbStatus" style="margin-left:auto; font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(27,59,43,0.05); opacity:0.8;">加载中...</div>
-                <button type="button" class="header-btn" onclick="triggerMemoryConsolidation(false)" style="margin-left:10px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.6;">整理记忆</button>
+                <button type="button" class="header-btn" onclick="forceCloudSync()" style="margin-left:8px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.7;">🔄 同步</button>
+                <button type="button" class="header-btn" onclick="triggerMemoryConsolidation(false)" style="margin-left:6px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.6;">整理记忆</button>
             </div>
             
             <!-- 🔍 微信同款历史聊天记录搜索框 -->
@@ -544,8 +545,9 @@
         // =======================================================
 
         const cdnList = [
-            "https://registry.npmmirror.com/@supabase/supabase-js/2.43.4/files/dist/umd/supabase.js",
+            "./supabase.js",
             "https://fastly.jsdelivr.net/npm/@supabase/supabase-js@2.43.4/dist/umd/supabase.js",
+            "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.43.4/dist/umd/supabase.js",
             "https://unpkg.com/@supabase/supabase-js@2.43.4/dist/umd/supabase.js"
         ];
 
@@ -623,13 +625,33 @@
                         dbConnected = true;
                         statusLabel.innerText = "☁️ 云端同步";
                         statusLabel.style.color = "#1B3B2B";
+                        console.log("✅ Supabase SDK 已从以下地址加载：", url);
                         return true;
                     }
                 } catch (e) { console.warn("CDN load failed: " + url); }
             }
             statusLabel.innerText = "🍃 本地保护";
             statusLabel.style.color = "#8F9E8B";
+            console.warn("⚠️ 所有 Supabase 源均加载失败，将只使用本机缓存。");
             return false;
+        }
+
+        // 手动强制云同步（点“🔄 同步”按钮时调用）
+        async function forceCloudSync() {
+            const statusLabel = document.getElementById('dbStatus');
+            try {
+                if (!dbConnected || !db) {
+                    statusLabel.innerText = "连接中...";
+                    const ok = await autoHealConnection();
+                    if (!ok) { alert("无法连接云端（当前网络可能屏蔽了 CDN）。现在只能显示本机缓存。"); return; }
+                }
+                await syncWithCloud();
+                await loadChats(selectedDate);
+                const n = allChatMessages.filter(m => m.session_id === selectedDate).length;
+                alert(`✅ 已从云端同步完成\n当前日期：${selectedDate}\n记录数：${n} 条`);
+            } catch (e) {
+                alert("同步失败：" + e.message);
+            }
         }
 
         function getCozySessionId(dateObj = new Date()) {
