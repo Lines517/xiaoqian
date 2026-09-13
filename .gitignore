@@ -3,3 +3,8 @@ node_modules/
 .env
 .DS_Store
 Thumbs.db
+
+# 私人聊天备份，绝不提交到公开仓库
+backup_cozy_chats.json
+backup_*.json
+backup_*.txt
