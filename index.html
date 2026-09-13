@@ -363,9 +363,10 @@
         const SUPABASE_URL = "https://kejcaijcqlfmtlfxktrk.supabase.co";
         const SUPABASE_KEY = "sb_publishable_xa16IttRP-xHQdHSiDNCsA_3dOlQutU";
         
-        // 部署后，将这里换成你的 Vercel 后端网址（例如: https://xiaoqian.vercel.app）
-        // 如果在本地运行测试，则使用本地地址: http://localhost:3000
-        const BACKEND_URL = "https://xiaoqian.vercel.app"; 
+        // 自动识别当前的网页环境：如果在线上则使用相对路径连接，本地运行则使用 http://localhost:3000
+        const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? "http://localhost:3000" 
+            : window.location.origin;
         // =======================================================
 
         const cdnList = [
