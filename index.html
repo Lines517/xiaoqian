@@ -448,10 +448,8 @@
 
         function getCozySessionId(dateObj = new Date()) {
             const now = new Date(dateObj);
-            // 获取在东八区（北京时间/杭州时间）的时区偏移差
-            const tzOffset = now.getTimezoneOffset(); // 浏览器本地相对于UTC的分钟差
-            // 转换为绝对北京时间（UTC+8）避免设备本地时间不准导致的偏移
-            const utc = now.getTime() + (tzOffset * 60000);
+            // 强制将任何设备的本地硬件时间，统一转换为北京时间/杭州时间（UTC+8）
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
             const bjTime = new Date(utc + (3600000 * 8));
             
             if (bjTime.getHours() < 5) { bjTime.setDate(bjTime.getDate() - 1); }
