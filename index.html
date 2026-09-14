@@ -1670,23 +1670,23 @@ ${historyText}
 
             btn.innerText = "发送中...";
 
-            // 线条明确说"换个头像"（且不是发图）时，解锁，允许小千自己挑一个
-            if (!pendingImageBase64 && /换(个|一|新)?(新)?头像/.test(text)) {
+            // 🔓 只有线条说“解锁头像”时才临时解锁（默认永久锁定，谁都不许改）
+            if (!pendingImageBase64 && /解锁头像/.test(text)) {
                 setAvatarLock(false);
-                console.log('🔓 线条要求换头像，已解锁');
+                appendSystemMessage("🔓 头像锁已解开。发一张新图 + 说“换成这个头像”就能换；换完会自动重新锁上。");
             }
 
             // 如果线条把图片说成“头像”，就用这张图给小千换上，并上锁（模型以后不能覆盖）
             const sentAvatarMatch = text.match(/\[LinesImage:\s*([\s\S]+?)\]/);
             if (sentAvatarMatch && /头像/.test(text)) {
                 userSetAvatarThisTurn = true;
-                setAvatarLock(true);
                 const rawAv = sentAvatarMatch[1].trim();
-                appendSystemMessage("🖼️ 正在把小千的头像换成你发的这张…（已锁定，小千不会再自己换掉）");
+                appendSystemMessage("🖼️ 正在把小千的头像换成你发的这张…");
                 makeSquareAvatar(rawAv, 240).then(sq => {
                     avatarXiaoqian = sq;
                     try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
-                    saveAvatarsToCloud();
+                    saveAvatarsToCloud(true);   // 这一次是她手动指定，允许写入云端
+                    setAvatarLock(true);        // 换完立刻重新锁上
                     refreshAvatarsInDom();
                 });
             }
@@ -2569,22 +2569,29 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             input.click();
         }
 
-        // 点击“小千”头像：让小千自己在网上找一张新图（并上锁，防止模型再乱换）
+        // 点击“小千”头像：头像锁定时不许乱换
         function changeXiaoqianAvatar() {
+            if (avatarLocked) {
+                appendSystemMessage("🔒 小千的头像已锁定。想换的话，跟我说一句「解锁头像」。");
+                return;
+            }
             const pool = ['forest', 'moon', 'starry', 'cat', 'rain', 'tea', 'books', 'cozy', 'night', 'flower'];
             const kw = pool[Math.floor(Math.random() * pool.length)];
             avatarXiaoqian = `https://loremflickr.com/160/160/${flickrKeywords(kw + ',cozy', 'cozy')}`;
             try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
+            saveAvatarsToCloud(true);
             setAvatarLock(true);
-            saveAvatarsToCloud();
             refreshAvatarsInDom();
         }
 
         // 头像云端同步（尽力而为，表不存在时静默降级到本地）
-        async function saveAvatarsToCloud() {
+        // 🔒 锁定时【绝不】把 avatar_xiaoqian 推上云端——避免本地残留的旧头像覆盖掉她选的情头
+        async function saveAvatarsToCloud(forceAvatar) {
             if (!dbConnected || !db) return;
             try {
-                await db.from('cozy_profiles').upsert([{ id: 'main', avatar_xiaoqian: avatarXiaoqian, avatar_user: avatarUser }]);
+                const payload = { id: 'main', avatar_user: avatarUser };
+                if (forceAvatar || !avatarLocked) payload.avatar_xiaoqian = avatarXiaoqian;
+                await db.from('cozy_profiles').upsert([payload]);
             } catch (e) { /* 云端暂无 cozy_profiles 表时忽略 */ }
         }
 
