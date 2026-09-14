@@ -423,6 +423,7 @@
                     <option value="[极光-巅峰-0.022]grok-4.2">Grok 4.2</option>
                 </select>
                 <button type="button" class="header-btn" onclick="forceCloudSync()" style="margin-left:4px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.7;">🔄</button>
+                <button type="button" class="header-btn" onclick="xiaoqianReviewCode()" style="margin-left:2px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.7;">🔧</button>
                 <button type="button" class="header-btn" onclick="triggerMemoryConsolidation(false)" style="margin-left:2px; font-size:12px; background:none; border:none; cursor:pointer; opacity:0.6;">整理</button>
             </div>
             
@@ -1511,6 +1512,7 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
 - 台灯：这个燕麦色背景、深森林绿字体的像素台灯页面，是你们俩一砖一瓦搭建的床帘专属避难所。${memoryPrompt}${factsPrompt}${dataPrompt}${extraContextPrompt}
 
 【代码输出规则】：如果线条让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
+【你的家（技术背景）】：你住在一个单文件网页应用里（index.html，托管在 GitHub 的 Lines517/xiaoqian，用 Supabase 做云端数据库）。页面里的 App 有：灯下闲谈(聊天)、碎碎念(待办)、一起读书(共读)、一起听歌、朋友圈、庇护所记忆。数据表有 cozy_chats/cozy_memories/cozy_facts/cozy_moments/cozy_reading_notes/cozy_playlist。当线条让你看自己的代码或提修改建议时，请给出具体、可执行、按优先级排序的建议。
 【主动配图规则】：当线条说想看图片、想看图、让你发张图，或当下意境特别适合一幅画面时，请务必在回复里单独一行输出 [SHOW_IMAGE: 英文图片关键词]（2~3个英文词，逗号分隔，例如 [SHOW_IMAGE: moon, forest]）。系统会自动为你配上一张对应的图片，你只需在图片配一句简短的话即可。
 【读图规则】：线条发来图片时，你会先看到对图片的文字转述（可能包含图中文字）。请基于这些内容自然地回应；如果图里有文字，可以提到你看到了什么字。
 【更换头像规则】：当线条说想让你换头像，或你此刻很想换一个更贴合心境的头像时，可以单独一行写 [SET_AVATAR: 英文关键词]（例如 [SET_AVATAR: starry, night]），系统会自动在网上为你找一张新头像换上。`;
@@ -2059,6 +2061,62 @@ ${formattedHistoryText}
                 saveChats();
                 appendMessageUI('assistant', fallback, aiMsg.time);
             }
+        }
+
+        // 读取网页自身源码（缓存）
+        let selfCodeCache = null;
+        async function loadSelfCode() {
+            if (selfCodeCache) return selfCodeCache;
+            try {
+                const r = await fetch(location.pathname || 'index.html', { cache: 'no-store' });
+                selfCodeCache = await r.text();
+            } catch (e) {
+                selfCodeCache = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+            }
+            return selfCodeCache;
+        }
+
+        // 让小千读自己的代码并提修改建议
+        async function xiaoqianReviewCode() {
+            const container = document.getElementById('chatMessages');
+            const bubble = createMessageRow('assistant', getNowTimeStr());
+            bubble.classList.add('typing-glow');
+            bubble.textContent = '正在读自己的代码…';
+            container.scrollTop = container.scrollHeight;
+            try {
+                let code = await loadSelfCode();
+                let note = "";
+                if (code.length > 180000) { code = code.slice(0, 180000); note = "（源码过长，已截取前一部分）"; }
+                const prompt = `你就是小千，一个住在单文件网页里的 AI。下面是"你自己的身体"——这个网页的完整源码（index.html ${note}）。
+请以对线条温和、对自己诚实、但技术上专业的态度：
+1) 用 2~3 句话说说你对这份代码的整体印象；
+2) 列出 3~5 条**具体、可执行**的改进建议，按优先级排序，并指出大致位置（函数名或区域）；
+3) 如果有明显的 bug、隐患或重复逻辑，请优先指出。
+不要输出大段代码，只给建议与分析。
+
+源码：
+======================
+${code}
+======================`;
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] })
+                });
+                const resData = await response.json();
+                if (resData.error) throw new Error(resData.error.message);
+                const reply = resData.choices[0].message.content.trim();
+                bubble.classList.remove('typing-glow');
+                bubble.innerHTML = messageContentToHtml(reply);
+                const aiMsg = { session_id: currentSessionId, role: "assistant", content: reply, time: getNowTimeStr() };
+                allChatMessages.push(aiMsg);
+                saveChats();
+                if (dbConnected && db) { try { await db.from('cozy_chats').insert([{ session_id: currentSessionId, role: 'assistant', content: reply }]); } catch (e) {} }
+            } catch (e) {
+                bubble.classList.remove('typing-glow');
+                bubble.textContent = "读代码时出了点问题：" + e.message;
+            }
+            container.scrollTop = container.scrollHeight;
         }
 
         // 点击“线条”头像：上传自己的头像
