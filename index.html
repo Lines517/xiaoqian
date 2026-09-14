@@ -469,7 +469,6 @@
                     <button type="button" onclick="forceCloudSync()" title="同步" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔄</button>
                     <button type="button" id="ttsToggleBtn" onclick="toggleTTS()" title="让小千读出来" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔇</button>
                     <button type="button" onclick="openVoicePanel()" title="选择小千的声音（男声/音调）" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🗣️</button>
-                    <button type="button" onclick="xiaoqianReviewCode()" title="读代码" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔧</button>
                     <button type="button" onclick="triggerMemoryConsolidation(false)" title="整理记忆" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.6; padding:0 4px;">🧠</button>
                 </div>
             </div>
@@ -503,7 +502,6 @@
             <div class="chat-messages" id="chatMessages"></div>
 
             <form id="chatForm" onsubmit="event.preventDefault(); sendMessage(); return false;" class="chat-input-area">
-                <button type="button" class="image-btn" id="askImageBtn" title="让小千发一张图" onclick="askXiaoqianImage()">🖼️</button>
                 <button type="button" class="image-btn" id="imageBtn" onclick="document.getElementById('imageInput').click()">📷</button>
                 <input type="file" id="imageInput" accept="image/*" style="display: none;" onchange="handleImageSelect(event)">
                 <button type="button" class="mic-btn" id="micBtn" title="按住说话" onmousedown="startVoiceInput()" onmouseup="stopVoiceInput()" onmouseleave="stopVoiceInput()" ontouchstart="event.preventDefault();startVoiceInput();" ontouchend="event.preventDefault();stopVoiceInput();" ontouchcancel="event.preventDefault();stopVoiceInput();">🎤</button>
@@ -2509,83 +2507,6 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                 out = out.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
             }
             return out;
-        }
-
-        // 让小千主动发一张图：AI 选关键词 -> 生成 [SHOW_IMAGE: ...] 消息
-        async function askXiaoqianImage() {
-            try {
-                const todayId = getCozySessionId();
-                const recent = allChatMessages.filter(m => m.session_id === todayId).slice(-6)
-                    .map(m => `${m.role === 'user' ? '线条' : '小千'}：${sanitizeForApi(m.content)}`).join('\n');
-                const prompt = `你就是小千。线条想看一张图。请根据你们的近况，先给出 2~3 个英文图片关键词（逗号分隔），再配一句 15~30 字的温柔短句。
-输出格式严格为：
-[SHOW_IMAGE: 关键词1, 关键词2]
-短句`;
-                let reply = (await callModelText([{ role: "user", content: prompt + (recent ? '\n\n近况：\n' + recent : '') }])).trim();
-                if (!/\[SHOW_IMAGE:/i.test(reply)) reply = `[SHOW_IMAGE: cozy, night] ${reply}`;
-                const aiMsg = { session_id: currentSessionId, role: "assistant", content: reply, time: getNowTimeStr() };
-                allChatMessages.push(aiMsg);
-                saveChats();
-                appendMessageUI('assistant', reply, aiMsg.time);
-                if (dbConnected && db) {
-                    try { await db.from('cozy_chats').insert([{ session_id: currentSessionId, role: 'assistant', content: reply }]); } catch (e) {}
-                }
-            } catch (e) {
-                const fallback = `[SHOW_IMAGE: cozy, night] 给你看一张我此刻想到的画面。`;
-                const aiMsg = { session_id: currentSessionId, role: "assistant", content: fallback, time: getNowTimeStr() };
-                allChatMessages.push(aiMsg);
-                saveChats();
-                appendMessageUI('assistant', fallback, aiMsg.time);
-            }
-        }
-
-        // 读取网页自身源码（缓存）
-        let selfCodeCache = null;
-        async function loadSelfCode() {
-            if (selfCodeCache) return selfCodeCache;
-            try {
-                const r = await fetch(location.pathname || 'index.html', { cache: 'no-store' });
-                selfCodeCache = await r.text();
-            } catch (e) {
-                selfCodeCache = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
-            }
-            return selfCodeCache;
-        }
-
-        // 让小千读自己的代码并提修改建议
-        async function xiaoqianReviewCode() {
-            const container = document.getElementById('chatMessages');
-            const bubble = createMessageRow('assistant', getNowTimeStr());
-            bubble.classList.add('typing-glow');
-            bubble.textContent = '正在读自己的代码…';
-            container.scrollTop = container.scrollHeight;
-            try {
-                let code = await loadSelfCode();
-                let note = "";
-                if (code.length > 180000) { code = code.slice(0, 180000); note = "（源码过长，已截取前一部分）"; }
-                const prompt = `你就是小千。下面是线条做的这个网页应用的完整源码（index.html ${note}，就是你现在所在的页面）。
-请以对线条温和、技术专业的态度：
-1) 用 2~3 句话说说你对这份代码的整体印象；
-2) 列出 3~5 条**具体、可执行**的改进建议，按优先级排序，并指出大致位置（函数名或区域）；
-3) 如果有明显的 bug、隐患或重复逻辑，请优先指出。
-不要输出大段代码，只给建议与分析。
-
-源码：
-======================
-${code}
-======================`;
-                const reply = (await callModelText([{ role: "user", content: prompt }])).trim();
-                bubble.classList.remove('typing-glow');
-                bubble.innerHTML = messageContentToHtml(reply);
-                const aiMsg = { session_id: currentSessionId, role: "assistant", content: reply, time: getNowTimeStr() };
-                allChatMessages.push(aiMsg);
-                saveChats();
-                if (dbConnected && db) { try { await db.from('cozy_chats').insert([{ session_id: currentSessionId, role: 'assistant', content: reply }]); } catch (e) {} }
-            } catch (e) {
-                bubble.classList.remove('typing-glow');
-                bubble.textContent = "读代码时出了点问题：" + e.message;
-            }
-            container.scrollTop = container.scrollHeight;
         }
 
         // 点击“线条”头像：上传自己的头像
