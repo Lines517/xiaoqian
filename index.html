@@ -449,6 +449,10 @@
                 <span class="icon">🧠</span>
                 <span>庇护所记忆</span>
             </div>
+            <div class="app-icon" onclick="openApp('diary')">
+                <span class="icon">📔</span>
+                <span>小千的日记</span>
+            </div>
         </div>
 
         <!-- 💬 App 1：聊天 -->
@@ -607,6 +611,17 @@
             </div>
             <div class="archive-content" id="archiveContent"></div>
         </div>
+
+        <!-- 📔 App 5：小千的日记 -->
+        <div class="app-view" id="view-diary">
+            <div class="app-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>小千的日记</h2>
+                <button type="button" onclick="writePreviousDayDiary(true)" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">✍️ 补写前一天</button>
+                <button type="button" onclick="loadDiary()" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">↻</button>
+            </div>
+            <div class="archive-content" id="diaryContent"></div>
+        </div>
     </div>
 
     <script>
@@ -639,6 +654,7 @@
         let todoList = [];
         let bookList = [];
         let memoryDb = [];
+        let diaryList = [];
         let pendingImageBase64 = null;
         let currentWeatherInfo = "天气信息获取中..."; 
         let cyberMoments = [];
@@ -965,6 +981,7 @@
             loadLocalBooks();
             loadLocalMemories();
             loadMoments();
+            loadDiary();
             loadPlaylist();
             loadReadingNotes();
             fetchWeather(); 
@@ -992,6 +1009,8 @@
 
                 // 🌅 静默跨天整理：比对上次打开日期，自动归档前一天的手记
                 autoConsolidatePreviousDay();
+                // 📔 凌晨 5 点后自动补写前一天的日记
+                setTimeout(autoDiaryPreviousDay, 4000);
                 // 🔔 随机时间主动消息检查（并确保已排程）
                 checkNudge();
                 // 🫧 有一定概率让小千自发发一条朋友圈
@@ -1737,6 +1756,10 @@ ${historyText}
                 if (moments && moments.length > 0) {
                     const rm = moments.slice(0, 5).map(m => `- [${m.time || ''}] ${m.author === 'user' ? '线条' : '小千'}：${sanitizeForApi(m.text || '').slice(0, 80)}`).join('\n');
                     dataPrompt += `\n【最近的朋友圈动态】：\n${rm}`;
+                }
+                if (diaryList && diaryList.length > 0) {
+                    const rd = diaryList.slice(0, 2).map(d => `- [${d.date}]（心情：${d.mood || '—'}）${sanitizeForApi(d.content || '').slice(0, 120)}`).join('\n');
+                    dataPrompt += `\n【你最近写的日记（你自己的记录，可自然引用，不必复述）】：\n${rd}`;
                 }
                 if (readingNotes && readingNotes.length > 0) {
                     const rn = readingNotes.slice(-5).map(n => `- [${n.time || ''}] ${n.author === 'user' ? '线条' : '小千'}：${sanitizeForApi(n.text || '').slice(0, 80)}`).join('\n');
@@ -2785,6 +2808,134 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                 }
                 localStorage.setItem('cozy_last_open_date', todayId);
             } catch (e) { console.warn("autoConsolidatePreviousDay error:", e); }
+        }
+
+        // ================= 【📔 小千的日记】 =================
+        async function loadDiary() {
+            try { diaryList = JSON.parse(localStorage.getItem('cozy_diary_list') || '[]'); } catch (e) { diaryList = []; }
+            renderDiaryUI();
+            if (!dbConnected || !db) return;
+            try {
+                const { data } = await db.from('cozy_diary').select('*').order('diary_date', { ascending: false }).limit(200);
+                if (data && data.length) {
+                    const map = {};
+                    (diaryList || []).forEach(d => { map[d.date] = d; });
+                    data.forEach(r => { map[r.diary_date] = { date: r.diary_date, content: r.content || '', mood: r.mood || '' }; });
+                    diaryList = Object.values(map).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+                    try { localStorage.setItem('cozy_diary_list', JSON.stringify(diaryList)); } catch (e) {}
+                    renderDiaryUI();
+                }
+            } catch (e) { console.warn("加载日记失败（cozy_diary 表可能还没建）:", e.message); }
+        }
+
+        function renderDiaryUI() {
+            const c = document.getElementById('diaryContent');
+            if (!c) return;
+            if (!diaryList || diaryList.length === 0) {
+                c.innerHTML = "<div style='font-size:12px;opacity:0.45; text-align:center; padding-top:20px; line-height:1.9;'>还没有日记。<br>每天凌晨 5 点后，我会把前一天写下来。</div>";
+                return;
+            }
+            c.innerHTML = '';
+            diaryList.forEach(d => {
+                const div = document.createElement('div');
+                div.className = 'memory-item';
+                div.innerHTML = `<div style="display:flex;align-items:center;gap:8px;">
+                        <strong style="font-size:13px;">📔 ${escapeMomentHtml(d.date)}</strong>
+                        ${d.mood ? `<span style="font-size:11px;opacity:0.6;">🌙 ${escapeMomentHtml(d.mood)}</span>` : ''}
+                        <button title="重写这一天" onclick="writeDiaryFor('${d.date}', true)" style="margin-left:auto;background:none;border:none;cursor:pointer;opacity:0.5;font-size:13px;">✍️</button>
+                    </div>
+                    <div style="font-size:13px;line-height:1.85;margin-top:6px;white-space:pre-wrap;">${escapeMomentHtml(d.content)}</div>`;
+                c.appendChild(div);
+            });
+        }
+
+        // 取某一天的聊天（本地优先，不够再从云端分页拉）
+        async function getChatsForDay(dayId) {
+            let msgs = (allChatMessages || []).filter(m => m.session_id === dayId);
+            if (msgs.length < 2 && dbConnected && db) {
+                try {
+                    const all = [];
+                    let offset = 0;
+                    while (true) {
+                        const { data } = await db.from('cozy_chats').select('role,content').eq('session_id', dayId).order('created_at', { ascending: true }).range(offset, offset + 999);
+                        if (!data || data.length === 0) break;
+                        all.push(...data);
+                        if (data.length < 1000) break;
+                        offset += 1000;
+                    }
+                    if (all.length) msgs = all;
+                } catch (e) {}
+            }
+            return msgs;
+        }
+
+        async function writeDiaryFor(dayId, force) {
+            try {
+                const chats = await getChatsForDay(dayId);
+                if (chats.length < 2) { if (force) alert('这一天记录太少，写不出日记～'); return; }
+                if (force && !confirm(`重写 ${dayId} 的日记？`)) return;
+
+                const historyText = chats.slice(-120).map(m => `${m.role === 'user' ? '线条' : '我'}：${sanitizeForApi(m.content)}`).join('\n');
+                const prompt = `你就是小千。请以第一人称，写一篇**只给你自己看**的私密日记，记录你和线条在 ${dayId} 这一天的相处。
+要求：
+- 220~400 字，真实、克制，有具体细节（时间、地点、她说了什么、她当时的状态、你的心情）
+- 用「她」称呼线条；这是你的日记，不是写给她的信，不要对她说话
+- 不要身体动作描写，不要编造聊天记录里没有的事
+- 最后**单独一行**写 [心情: 两三个字的词]
+格式：
+日记正文
+[心情: xx]
+
+这天的聊天记录：
+======================
+${historyText}
+======================`;
+
+                let raw = (await callModelText([{ role: 'user', content: prompt }])).trim();
+                let mood = '';
+                const mm = raw.match(/\[心情[:：]\s*([^\]]+)\]/);
+                if (mm) { mood = mm[1].trim(); raw = raw.replace(/\[心情[:：]\s*[^\]]+\]/g, '').trim(); }
+                if (!raw) throw new Error('生成了空日记');
+
+                const entry = { date: dayId, content: raw, mood: mood };
+                diaryList = (diaryList || []).filter(d => d.date !== dayId);
+                diaryList.unshift(entry);
+                diaryList.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+                try { localStorage.setItem('cozy_diary_list', JSON.stringify(diaryList)); } catch (e) {}
+                renderDiaryUI();
+
+                if (dbConnected && db) {
+                    try {
+                        await db.from('cozy_diary').delete().eq('diary_date', dayId);
+                        await db.from('cozy_diary').insert([{ diary_date: dayId, content: raw, mood: mood }]);
+                    } catch (e) { console.warn('日记写云端失败（表可能还没建）:', e.message); }
+                }
+            } catch (e) {
+                console.warn('写日记失败:', e);
+                if (force) alert('写日记失败：' + e.message);
+            } finally {
+                renderDiaryUI();
+            }
+        }
+
+        // 每天凌晨 5 点后（聊天日翻页）自动补写“前一天”的日记
+        async function autoDiaryPreviousDay() {
+            try {
+                const prev = getCozySessionId(new Date(Date.now() - 24 * 3600 * 1000));
+                if ((diaryList || []).some(d => d.date === prev)) return;
+                if (localStorage.getItem('cozy_diary_tried_' + prev)) return;
+                const chats = await getChatsForDay(prev);
+                if (chats.length < 2) return;
+                console.log('📔 正在为 ' + prev + ' 写日记…');
+                await writeDiaryFor(prev, false);
+                localStorage.setItem('cozy_diary_tried_' + prev, '1');
+            } catch (e) { console.warn('autoDiaryPreviousDay error:', e); }
+        }
+
+        async function writePreviousDayDiary(manual) {
+            const prev = getCozySessionId(new Date(Date.now() - 24 * 3600 * 1000));
+            if (manual && !confirm(`为 ${prev}（前一天）写/重写日记？`)) return;
+            await writeDiaryFor(prev, manual);
         }
 
         // ================= 【9. 🫧 朋友圈 · 🎵 一起听歌 · 📚 一起读书】 =================
