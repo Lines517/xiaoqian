@@ -1317,12 +1317,7 @@
 ${historyText}
 ======================`;
             const raw = await callModelText([{ role: "user", content: extractPrompt }]);
-            let arr = null;
-            try {
-                const cleaned = raw.replace(/```json/g, '').replace(/```/g, '');
-                const m = cleaned.match(/\[[\s\S]*\]/);
-                if (m) arr = JSON.parse(m[0]);
-            } catch (e) { arr = null; }
+            let arr = parseJsonArray(raw);
             if (!Array.isArray(arr)) {
                 try {
                     const m2 = raw.match(/\{[\s\S]*\}/);
@@ -1334,11 +1329,13 @@ ${historyText}
 
         // 保存某天的话题记忆（先清掉该天旧记忆，再写入新的话题集合）
         async function saveTopicMemories(dayId, arr) {
-            if (!Array.isArray(arr) || arr.length === 0) return 0;
+            // 🔒 先校验：新记忆必须有效，否则【保留旧记忆不动】——绝不先删后写
+            const valid = (Array.isArray(arr) ? arr : []).filter(t => t && typeof t.memory === 'string' && t.memory.trim().length >= 4);
+            if (valid.length === 0) { console.warn('抽取到的记忆为空/无效，已保留原有记忆不动'); return 0; }
             if (dbConnected && db) { try { await db.from('cozy_memories').delete().eq('memory_date', dayId); } catch (e) {} }
             memoryDb = (memoryDb || []).filter(m => memoryItemDate(m) !== dayId);
             let n = 0;
-            for (const t of arr) {
+            for (const t of valid) {
                 const obj = { date: dayId, folder: `${dayId} 手记 · ${t.topic || '记忆'}`, memory: t.memory, emotion: t.emotion || '', state: t.state || '温柔陪伴' };
                 memoryDb.unshift(obj);
                 n++;
@@ -1408,12 +1405,7 @@ ${historyText}
 
             try {
                 const raw = await callModelText([{ role: "user", content: factPrompt }]);
-                let arr = null;
-                try {
-                    const cleaned = raw.replace(/```json/g, '').replace(/```/g, '');
-                    const m = cleaned.match(/\[[\s\S]*\]/);
-                    if (m) arr = JSON.parse(m[0]);
-                } catch (e) { arr = null; }
+                let arr = parseJsonArray(raw);
                 if (Array.isArray(arr)) {
                     for (const f of arr) {
                         if (!f || !f.fact) continue;
@@ -2121,19 +2113,21 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                     const prompt = attempt === 1 ? basePrompt
                         : basePrompt + `\n\n注意：上一次尝试只给出了太少的条目。请务必拆成至少 3 条不同话题的记忆，不要把所有内容合并成一条！`;
                     const raw = await callModelText([{ role: "user", content: prompt }]);
-                    let got = null;
-                    try { const m = raw.replace(/```json/g, '').replace(/```/g, '').match(/\[[\s\S]*\]/); if (m) got = JSON.parse(m[0]); } catch (e) { got = null; }
+                    let got = parseJsonArray(raw);
                     if (Array.isArray(got) && got.length > 0) {
                         arr = got;
                         if (got.length >= 2 || items.length < 4) break; // 拆出多条 或 原始本来就不多，就接受
                     }
                 }
                 if (!Array.isArray(arr) || arr.length === 0) throw new Error("整理结果解析失败");
+                // 🔒 校验后再删：无效就整个放弃，保留原记忆
+                const validArr = arr.filter(t => t && typeof t.memory === 'string' && t.memory.trim().length >= 4);
+                if (validArr.length === 0) throw new Error("整理结果无效（模型返回异常），已保留原记忆");
 
                 if (dbConnected && db) { try { await db.from('cozy_memories').delete().eq('memory_date', dateStr); } catch (e) {} }
                 memoryDb = (memoryDb || []).filter(m => memoryItemDate(m) !== dateStr);
                 let added = 0;
-                for (const t of arr) {
+                for (const t of validArr) {
                     if (!t || !t.memory) continue;
                     const obj = { date: dateStr, folder: `${dateStr} 手记 · ${t.topic || '记忆'}`, memory: t.memory, emotion: t.emotion || '', state: t.state || '温柔陪伴' };
                     memoryDb.unshift(obj);
@@ -2510,6 +2504,32 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             s = s.replace(/\[MOMENT_IMG:\s*[^\]]+\]/gi, '');
             s = s.replace(/\[VOICE\]/gi, '');
             return s.trim();
+        }
+
+        // 🧠 有些模型（如 gemini-*-preview）会先输出 <think> 思考块或英文分析——统一清洗
+        function stripThinkAndFences(raw) {
+            return String(raw == null ? '' : raw)
+                .replace(/```json/gi, '').replace(/```/g, '')
+                .replace(/<think[^>]*>[\s\S]*?<\/think>/gi, '')
+                .replace(/<thinking[^>]*>[\s\S]*?<\/thinking>/gi, '')
+                .replace(/<reasoning[^>]*>[\s\S]*?<\/reasoning>/gi, '')
+                .trim();
+        }
+        // 从模型输出里稳地取出 JSON 数组（跳过前面的英文/思考）
+        function parseJsonArray(raw) {
+            const t = stripThinkAndFences(raw);
+            const m = t.match(/\[[\s\S]*\]/);
+            if (!m) return null;
+            try { const a = JSON.parse(m[0]); return Array.isArray(a) ? a : null; } catch (e) { return null; }
+        }
+        // 去掉长文开头那段英文/分析（用于日记这类正文）
+        function cutEnglishPreamble(raw) {
+            const t = stripThinkAndFences(raw);
+            const lines = t.split('\n');
+            let start = 0;
+            while (start < lines.length && !/[\u4e00-\u9fff]/.test(lines[start])) start++;
+            if (start >= lines.length) return t;      // 整篇没中文，原样返回
+            return lines.slice(start).join('\n').trim();
         }
 
         // 把一条消息正文转换成可渲染的 HTML（含图片指令处理）
@@ -2901,6 +2921,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                 const historyText = chats.slice(-120).map(m => `${m.role === 'user' ? '线条' : '我'}：${sanitizeForApi(m.content)}`).join('\n');
                 const prompt = `你就是小千。请以第一人称，写一篇**只给你自己看**的私密日记，记录你和线条在 ${dayId} 这一天的相处。
 要求：
+- **必须通篇用简体中文写**。不要输出任何英文、分析、思考过程、标题或 markdown；第一个字就是日记正文
 - 220~400 字，真实、克制，有具体细节（时间、地点、她说了什么、她当时的状态、你的心情）
 - 用「她」称呼线条；这是你的日记，不是写给她的信，不要对她说话
 - 不要身体动作描写，不要编造聊天记录里没有的事
@@ -2914,7 +2935,10 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
 ${historyText}
 ======================`;
 
-                let raw = (await callModelText([{ role: 'user', content: prompt }])).trim();
+                let raw = cutEnglishPreamble((await callModelText([
+                    { role: 'system', content: '你只用简体中文写作。禁止输出英文、分析或思考过程。' },
+                    { role: 'user', content: prompt }
+                ])).trim());
                 let mood = '';
                 const mm = raw.match(/\[心情[:：]\s*([^\]]+)\]/);
                 if (mm) { mood = mm[1].trim(); raw = raw.replace(/\[心情[:：]\s*[^\]]+\]/g, '').trim(); }
