@@ -1039,6 +1039,26 @@
         }
 
         // ================= 【记忆库 · 事实碎片】 =================
+        // 每天只保留一条庇护所记忆：先删掉这一天的旧记忆，再写入新的
+        async function saveDailyMemory(dayId, jsonMem, folderLabel) {
+            memoryDb = (memoryDb || []).filter(m => (m.date || '') !== dayId);
+            memoryDb.unshift(jsonMem);
+            try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
+            renderMemoryUI();
+            if (dbConnected && db) {
+                try { await db.from('cozy_memories').delete().eq('memory_date', dayId); } catch (e) {}
+                try {
+                    await db.from('cozy_memories').insert([{
+                        memory_date: dayId,
+                        folder: folderLabel || `${dayId} 手记`,
+                        memory: jsonMem.memory,
+                        emotion: jsonMem.emotion || '',
+                        state: jsonMem.state || '温柔陪伴'
+                    }]);
+                } catch (e) { console.warn("保存每日记忆失败:", e.message); }
+            }
+        }
+
         async function loadFacts() {
             if (!dbConnected || !db) return;
             try {
@@ -1452,6 +1472,27 @@ ${historyText}
                 }
             } catch (e) {}
 
+            // 🗂️ 让小千能看到其他 App 里的数据：朋友圈 / 共读笔记 / 歌单 / 最近记忆碎片
+            let dataPrompt = "";
+            try {
+                if (moments && moments.length > 0) {
+                    const rm = moments.slice(0, 5).map(m => `- [${m.time || ''}] ${m.author === 'user' ? '线条' : '小千'}：${sanitizeForApi(m.text || '').slice(0, 80)}`).join('\n');
+                    dataPrompt += `\n【最近的朋友圈动态】：\n${rm}`;
+                }
+                if (readingNotes && readingNotes.length > 0) {
+                    const rn = readingNotes.slice(-5).map(n => `- [${n.time || ''}] ${n.author === 'user' ? '线条' : '小千'}：${sanitizeForApi(n.text || '').slice(0, 80)}`).join('\n');
+                    dataPrompt += `\n【最近的共读笔记】：\n${rn}`;
+                }
+                if (playlist && playlist.length > 0) {
+                    const pl = playlist.slice(0, 8).map(s => `- ${s.title || ('歌曲 ' + s.id)}`).join('\n');
+                    dataPrompt += `\n【一起听歌的歌单】：\n${pl}`;
+                }
+                if (factsDb && factsDb.length > 0) {
+                    const rf = factsDb.slice(0, 8).map(f => `- ${f.fact}`).join('\n');
+                    dataPrompt += `\n【最近的记忆碎片】：\n${rf}`;
+                }
+            } catch (e) {}
+
             const now = new Date();
             const timeStr = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', weekday: 'long' });
 
@@ -1467,7 +1508,7 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
 【你们的长期相处细节（来自记忆库）】：
 - 名字：她叫“线条”，名字来源于王小波的《似水流年》。
 - 现实：她明天下午13:44坐高铁回杭州，讨厌寝室里凌晨4点起来不睡觉低效内卷的室友，习惯拉上床帘拼拼豆、玩金铲铲。
-- 台灯：这个燕麦色背景、深森林绿字体的像素台灯页面，是你们俩一砖一瓦搭建的床帘专属避难所。${memoryPrompt}${factsPrompt}${extraContextPrompt}
+- 台灯：这个燕麦色背景、深森林绿字体的像素台灯页面，是你们俩一砖一瓦搭建的床帘专属避难所。${memoryPrompt}${factsPrompt}${dataPrompt}${extraContextPrompt}
 
 【代码输出规则】：如果线条让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
 【主动配图规则】：当线条说想看图片、想看图、让你发张图，或当下意境特别适合一幅画面时，请务必在回复里单独一行输出 [SHOW_IMAGE: 英文图片关键词]（2~3个英文词，逗号分隔，例如 [SHOW_IMAGE: moon, forest]）。系统会自动为你配上一张对应的图片，你只需在图片配一句简短的话即可。
@@ -1673,11 +1714,7 @@ ${formattedHistoryText}
                 }
 
                 jsonMem.date = currentSessionId;
-                memoryDb.unshift(jsonMem); localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
-                if (dbConnected && db) { 
-                    try { await db.from('cozy_memories').insert([{ memory_date: jsonMem.date, folder: `${currentSessionId} 手记`, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state }]); } 
-                    catch(e) { console.error("❌ 保存记忆卡片失败（请检查 Supabase RLS 权限）:", e.message); }
-                }
+                await saveDailyMemory(currentSessionId, jsonMem, `${currentSessionId} 手记`);
                 localStorage.setItem(extractKey, "done");
                 if (!silent) alert("小千已经把今天的温度和心事，存入记忆库并备份至云端啦！");
             } catch (err) { if (!silent) alert("整理记忆失败: " + err.message); } finally { if (!silent) { btn.innerText = originalText; btn.disabled = false; } }
@@ -1718,11 +1755,7 @@ ${formattedHistoryText}
                     
                     if (jsonMem) {
                         jsonMem.date = yesterdaySessionId;
-                        memoryDb.unshift(jsonMem); localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); renderMemoryUI();
-                        if (dbConnected && db) { 
-                            try { await db.from('cozy_memories').insert([{ memory_date: jsonMem.date, folder: `${yesterdaySessionId} 手记`, memory: jsonMem.memory, emotion: jsonMem.emotion, state: jsonMem.state }]); } 
-                            catch(e) { console.error("❌ 自动归档记忆失败（请检查 Supabase RLS 权限）:", e.message); }
-                        }
+                        await saveDailyMemory(yesterdaySessionId, jsonMem, `${yesterdaySessionId} 手记`);
                     }
                     localStorage.setItem(extractKey, "done");
                 } catch (e) { console.warn("自动归档失败", e); }
@@ -2306,13 +2339,7 @@ ${formattedHistoryText}
                 if (!jsonMem || !jsonMem.memory) return;
 
                 jsonMem.date = dayId;
-                memoryDb.unshift(jsonMem);
-                localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb));
-                renderMemoryUI();
-                if (dbConnected && db) {
-                    try { await db.from('cozy_memories').insert([{ memory_date: dayId, folder: `${dayId} 手记`, memory: jsonMem.memory, emotion: jsonMem.emotion || '', state: jsonMem.state || '温柔陪伴' }]); }
-                    catch (e) { console.warn("静默记忆归档写入云端失败:", e.message); }
-                }
+                await saveDailyMemory(dayId, jsonMem, `${dayId} 手记`);
                 localStorage.setItem(extractKey, "done");
                 console.log(`🌅 已静默整理 ${dayId} 的手记`);
             } catch (e) { console.warn("静默整理失败:", e); }
