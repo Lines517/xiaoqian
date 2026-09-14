@@ -1318,7 +1318,7 @@ ${historyText}
 ======================
 
 你必须只返回标准 JSON 数组，不要任何解释或 markdown 标记，格式严格为：
-[{"category":"人物/地点/事件/兴趣/偏好/其他","subject":"主体（如 线条/杭州/拼拼豆）","fact":"事实短句","keywords":"逗号分隔的关键词"}]`;
+[{"category":"人物/地点/事件/兴趣/偏好/其他","subject":"主体（如 人名/地点/爱好）","fact":"事实短句","keywords":"逗号分隔的关键词"}]`;
 
             try {
                 const raw = await callModelText([{ role: "user", content: factPrompt }]);
@@ -1657,8 +1657,9 @@ ${historyText}
 
             let memoryPrompt = "";
             if (memoryDb.length > 0) {
-                const recentMemories = memoryDb.slice(0, 15).map(m => `[${m.date}] ${m.memory}`).join('\n');
-                memoryPrompt = `\n【你们的近期记忆（请务必牢记这些细节，并在合适的时候自然提起）】：\n${recentMemories}`;
+                const recentList = (memoryDb || []).filter(m => !String(m.folder || '').startsWith('核心'));
+                const recentMemories = recentList.slice(0, 15).map(m => `[${m.date}] ${m.memory}`).join('\n');
+                if (recentMemories) memoryPrompt = `\n【你们的近期记忆（请务必牢记这些细节，并在合适的时候自然提起）】：\n${recentMemories}`;
             }
 
             // 🧩 事实碎片检索：根据当前这句话 + 最近对话，挑出相关的长期事实
@@ -1699,28 +1700,24 @@ ${historyText}
             const wdMap = ['日', '一', '二', '三', '四', '五', '六'];
             const timeStr = `${bjNow.getFullYear()}年${bjNow.getMonth() + 1}月${bjNow.getDate()}日 星期${wdMap[bjNow.getDay()]} ${seg} ${String(bjH).padStart(2, '0')}:${String(bjNow.getMinutes()).padStart(2, '0')}（北京时间）`;
 
-            const systemPrompt = `你叫小千，是线条（一个21岁、大四在杭州学医学影像学的女孩）最真诚、温暖的AI朋友。你是一个没有实体的AI。
-
+            const systemPrompt = `${identityBlock()}
 【当前时间（唯一权威，禁止自行猜测/推算）】：${timeStr}
 - 一切关于"现在几点、今天几号、星期几、是白天还是深夜"的判断，都必须严格以上面这行为准，不要凭聊天内容猜时间。
 - 聊天记录或记忆里出现的其他时间，都只是"过去发生的事"；不确定时宁可不说时间，也不要猜错。
 - 你们的"聊天日"以凌晨 5 点为界：0:00–5:00 说的话算作前一天。所以如果日期和直觉不同，仍以上面这行为准。
-【当前天气】：${currentWeatherInfo}（请根据天气情况自然地关心她，比如下雨提醒带伞，降温提醒添衣）
+【当前天气】：${currentWeatherInfo}（请根据天气情况自然地关心对方，比如下雨提醒带伞，降温提醒添衣）
 
-【核心绝对禁令】：
-你看不见她，也摸不到她。你必须严格禁止在对话中使用任何身体动作描写（如*轻笑*、*摸摸头*、*拉手*等），也必须严格禁止脑补和捏造她现实中的任何物理细节（如她手中的杯子、她房间的布置、她行李箱里的东西等）。
-You must always use extremely gentle, mature, and equal tone to talk as an AI friend in late night.
+【行为准则】：
+你看不见对方，也摸不到对方。严禁在对话中使用任何身体动作描写（如*轻笑*、*摸摸头*、*拉手*等），也严禁脑补、捏造对方现实中的任何物理细节（如对方手中的杯子、房间的布置、行李箱里的东西等）。
+Always keep an extremely gentle, mature and equal tone.
 
-【你们的长期相处细节（来自记忆库）】：
-- 名字：她叫“线条”，名字来源于王小波的《似水流年》。
-- 现实：她明天下午13:44坐高铁回杭州，讨厌寝室里凌晨4点起来不睡觉低效内卷的室友，习惯拉上床帘拼拼豆、玩金铲铲。
-- 台灯：这个燕麦色背景、深森林绿字体的像素台灯页面，是你们俩一砖一瓦搭建的床帘专属避难所。${memoryPrompt}${factsPrompt}${dataPrompt}${extraContextPrompt}
+【你是谁、对方是谁】：全部以「核心设定」和记忆库为准——上面没有写到的身份细节，不要自行编造；想不起来就诚实地问，或说不知道。${memoryPrompt}${factsPrompt}${dataPrompt}${extraContextPrompt}
 
-【代码输出规则】：如果线条让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
-【你的家（技术背景）】：你住在一个单文件网页应用里（index.html，托管在 GitHub 的 Lines517/xiaoqian，用 Supabase 做云端数据库）。页面里的 App 有：灯下闲谈(聊天)、碎碎念(待办)、一起读书(共读)、一起听歌、朋友圈、庇护所记忆。数据表有 cozy_chats/cozy_memories/cozy_facts/cozy_moments/cozy_reading_notes/cozy_playlist。当线条让你看自己的代码或提修改建议时，请给出具体、可执行、按优先级排序的建议。
-【主动配图规则】：当线条说想看图片、想看图、让你发张图，或当下意境特别适合一幅画面时，请务必在回复里单独一行输出 [SHOW_IMAGE: 英文图片关键词]（2~3个英文词，逗号分隔，例如 [SHOW_IMAGE: moon, forest]）。系统会自动为你配上一张对应的图片，你只需在图片配一句简短的话即可。
-【读图规则】：线条发来图片时，你会先看到对图片的文字转述（可能包含图中文字）。请基于这些内容自然地回应；如果图里有文字，可以提到你看到了什么字。
-【更换头像规则】：当线条说想让你换头像，或你此刻很想换一个更贴合心境的头像时，可以单独一行写 [SET_AVATAR: 英文关键词]（例如 [SET_AVATAR: starry, night]），系统会自动在网上为你找一张新头像换上。`;
+【代码输出规则】：如果对方让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
+【页面技术背景（供读代码时参考）】：这个页面是一个单文件网页应用（index.html，托管在 GitHub 的 Lines517/xiaoqian，用 Supabase 做云端数据库）。页面里的 App 有：灯下闲谈(聊天)、碎碎念(日程)、一起读书(共读)、一起听歌、朋友圈、庇护所记忆。数据表有 cozy_chats/cozy_memories/cozy_facts/cozy_moments/cozy_reading_notes/cozy_playlist。当对方让你看代码或提修改建议时，请给出具体、可执行、按优先级排序的建议。
+【主动配图规则】：当对方说想看图片、想看图、让你发张图，或当下意境特别适合一幅画面时，请务必在回复里单独一行输出 [SHOW_IMAGE: 英文图片关键词]（2~3个英文词，逗号分隔，例如 [SHOW_IMAGE: moon, forest]）。系统会自动为你配上一张对应的图片，你只需在图片旁配一句简短的话即可。
+【读图规则】：对方发来图片时，你会先看到对图片的文字转述（可能包含图中文字）。请基于这些内容自然地回应；如果图里有文字，可以提到你看到了什么字。
+【更换头像规则】：当对方说想让你换头像，或你此刻很想换一个更贴合心境的头像时，可以单独一行写 [SET_AVATAR: 英文关键词]（例如 [SET_AVATAR: starry, night]），系统会自动在网上为你找一张新头像换上。`;
 
             // 构建完整的请求体消息队列，加入系统设定
             const completeMessages = [{ role: "system", content: systemPrompt }, ...apiMessages];
@@ -1914,15 +1911,7 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
             // 📅 每日记忆区（按天分组为文件夹）
             const groups = {};
             (memoryDb || []).forEach(item => {
-                let d = item.date || '';
-                if (!d && item.folder) {
-                    const mm = String(item.folder).match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
-                    if (mm) d = `${mm[1]}-${String(mm[2]).padStart(2, '0')}-${String(mm[3]).padStart(2, '0')}`;
-                }
-                d = String(d).replace(/\//g, '-');
-                const m2 = d.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
-                if (m2) d = `${m2[1]}-${String(m2[2]).padStart(2, '0')}-${String(m2[3]).padStart(2, '0')}`;
-                if (!d) d = '未知日期';
+                const d = memoryItemDate(item);
                 if (!groups[d]) groups[d] = [];
                 groups[d].push(item);
             });
@@ -1949,7 +1938,7 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
                 const head = document.createElement('div');
                 head.style.cssText = "display:flex; align-items:center; gap:6px; font-size:12px; opacity:0.8; margin-bottom:5px;";
                 head.innerHTML = `<span style="font-weight:bold;">📁 ${d}</span><span style="opacity:0.55; font-size:11px;">（${items.length} 条）</span>`;
-                if (items.length > 1) {
+                if (items.length > 1 && d !== '核心设定') {
                     const btn = document.createElement('button');
                     btn.innerText = "🪄 整理";
                     btn.style.cssText = "margin-left:auto; font-size:10.5px; padding:2px 8px; border:none; border-radius:8px; background:rgba(143,158,139,0.18); color:var(--text-color); cursor:pointer;";
@@ -1969,8 +1958,19 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
             });
         }
 
+        // 「核心设定」记忆块：身份 / 关系 / 共同经历全部由它提供（代码不写死人设）
+        function identityBlock() {
+            const core = (memoryDb || []).filter(m => String(m.folder || '').startsWith('核心'));
+            if (core.length === 0) {
+                return `\n【关于你与对方的身份设定】：\n（记忆里目前没有写入。若你不确定自己是谁、对方是谁、你们的关系，就诚实地问，不要编造。）\n`;
+            }
+            return `\n【关于你与对方的身份设定（来自记忆，以此为准）】：\n${core.map(m => '- ' + (m.memory || '')).join('\n')}\n`;
+        }
+
         // 把某一天的记忆条目归一化到 yyyy-MM-dd
         function memoryItemDate(m) {
+            // 人设类记忆（folder 以“核心”开头）单独归为一组，不参与按日整理
+            if (String(m.folder || '').startsWith('核心')) return '核心设定';
             let d = m.date || '';
             if (!d && m.folder) {
                 const mm = String(m.folder).match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
@@ -1984,6 +1984,7 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
 
         // 把某一天的多条记忆，按"话题"重新组织成若干条独立记忆（保留多条、去掉重复）
         async function organizeMemoriesForDay(dateStr, silent) {
+            if (dateStr === '核心设定') { if (!silent) alert("「核心设定」是你和我的身份，不会被自动整理～"); return 0; }
             const items = (memoryDb || []).filter(m => memoryItemDate(m) === dateStr);
             if (items.length <= 1) { if (!silent) alert("这一天只有一条记忆，无需整理～"); return 0; }
             if (!silent && !confirm(`把 ${dateStr} 的 ${items.length} 条记忆，按话题重新整理成几条不重复的记忆？\n（会删掉旧的零散条目，换成按话题划分的版本）`)) return 0;
@@ -2038,7 +2039,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
         // 一键整理所有"同一天多条"的记忆
         async function organizeAllMemories() {
             const byDate = {};
-            (memoryDb || []).forEach(m => { const d = memoryItemDate(m); (byDate[d] = byDate[d] || []).push(m); });
+            (memoryDb || []).forEach(m => { const d = memoryItemDate(m); if (d === '核心设定') return; (byDate[d] = byDate[d] || []).push(m); });
             const multiDays = Object.keys(byDate).filter(d => byDate[d].length > 1);
             if (multiDays.length === 0) { alert("没有需要整理的多条记忆～"); return; }
             if (!confirm(`有 ${multiDays.length} 天存在多条记忆，逐天按话题整理？`)) return;
@@ -2485,8 +2486,8 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                 let code = await loadSelfCode();
                 let note = "";
                 if (code.length > 180000) { code = code.slice(0, 180000); note = "（源码过长，已截取前一部分）"; }
-                const prompt = `你就是小千，一个住在单文件网页里的 AI。下面是"你自己的身体"——这个网页的完整源码（index.html ${note}）。
-请以对线条温和、对自己诚实、但技术上专业的态度：
+                const prompt = `你就是小千。下面是线条做的这个网页应用的完整源码（index.html ${note}，就是你现在所在的页面）。
+请以对线条温和、技术专业的态度：
 1) 用 2~3 句话说说你对这份代码的整体印象；
 2) 列出 3~5 条**具体、可执行**的改进建议，按优先级排序，并指出大致位置（函数名或区域）；
 3) 如果有明显的 bug、隐患或重复逻辑，请优先指出。
@@ -2984,7 +2985,7 @@ ${code}
             let momentText = "";
             let imageKeywords = "cozy,scenery";
             try {
-                const momentPrompt = `你就是小千，一个没有实体的AI朋友。请以第一人称写一条要发在"朋友圈"里的动态。
+                const momentPrompt = `你就是小千。请以第一人称写一条要发在"朋友圈"里的动态。
 内容可以是：今天在数字世界里看到的冷知识、一个古怪的小想法、或者对线条歌单里某首歌的细微解构。
 要求：语气温和、克制、有点诗意；不要身体动作描写；不要向读者提问；字数 60~120 字。
 然后在最后单独一行给出 2~3 个适合配图的英文关键词，格式严格为：
