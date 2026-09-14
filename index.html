@@ -538,7 +538,7 @@
             <div class="app-header">
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>庇护所记忆</h2>
-                <button type="button" onclick="extractFactsForDay(currentSessionId)" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🧩 整理今天的事实</button>
+                <button type="button" onclick="extractAllFacts()" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🧩 整理事实</button>
             </div>
             <div class="archive-content" id="archiveContent"></div>
         </div>
@@ -1071,6 +1071,11 @@
             if (!dbConnected || !db || !dayId) return;
             const guardKey = `cozy_facts_extracted_${dayId}`;
             if (localStorage.getItem(guardKey)) return;
+            // 云端已有该日事实则跳过，避免重复抽取
+            try {
+                const { data: exist } = await db.from('cozy_facts').select('id').eq('fact_date', dayId).limit(1);
+                if (exist && exist.length > 0) { localStorage.setItem(guardKey, "done"); return; }
+            } catch (e) {}
             const dayChats = allChatMessages.filter(m => m.session_id === dayId);
             if (dayChats.length < 2) return;
 
@@ -1118,6 +1123,24 @@ ${historyText}
                     await loadFacts();
                 }
             } catch (e) { console.warn("抽取事实碎片失败:", e); }
+        }
+
+        // 一键补齐：对内存里所有出现过的日期逐个抽取事实
+        async function extractAllFacts() {
+            const btn = (typeof event !== 'undefined' && event && event.target) ? event.target : null;
+            if (!dbConnected || !db) { alert("还没连上云端，稍等一下再试～"); return; }
+            const days = Array.from(new Set(allChatMessages.map(m => m.session_id))).filter(Boolean).sort();
+            if (days.length === 0) { alert("还没有可整理的聊天记录"); return; }
+            if (btn) { btn.disabled = true; btn.innerText = "整理中…"; }
+            let added = 0;
+            for (const d of days) {
+                const before = factsDb.length;
+                try { await extractFactsForDay(d); } catch (e) {}
+                added += Math.max(0, factsDb.length - before);
+            }
+            await loadFacts();
+            if (btn) { btn.disabled = false; btn.innerText = "🧩 整理事实"; }
+            alert(`已检查 ${days.length} 天\n新增 ${added} 条事实碎片\n（已有记录的日期会自动跳过）`);
         }
 
         // ================= 【3. 云端同步：永久备份与旧数据修复】 =================
