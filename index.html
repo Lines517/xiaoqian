@@ -556,7 +556,8 @@
         const SUPABASE_KEY = "sb_publishable_xa16IttRP-xHQdHSiDNCsA_3dOlQutU";
         
         const API_URL = "https://shufulei.net/v1/chat/completions"; 
-        const API_KEY = "fHHaJSoscSQPLyygDFWvE9SvoM7CN3Z3i1BpbTiMwNTtbjx0"; 
+        // 🔒 API Key 已移除：所有请求都通过 Supabase Edge Function("总机") 中转，前端不再保存密钥。
+        const API_KEY = ""; 
         let API_MODEL = localStorage.getItem('cozy_selected_model') || "[企业cli-0.01]gemini-3.5-flash";
         const ANNIVERSARY_DATE = new Date('2026-09-12T00:00:00+08:00'); // 认识日
         // 【可选】部署 Supabase Edge Function 后填这里，就能把 API Key 藏到服务端。
@@ -672,6 +673,42 @@
                 headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
                 body: JSON.stringify(payload)
             });
+        }
+
+        // 统一的"取文本"调用：走流式通道，把整段回复拼好返回（用于识图、总结、评论等）
+        async function callModelText(messages) {
+            const resp = await openModelStream(messages);
+            if (!resp || !resp.ok || !resp.body) {
+                let msg = "接口出错";
+                try { const j = await resp.json(); msg = (j.error && (j.error.message || j.error)) || msg; } catch (e) {}
+                if (String(msg).includes("余额不足") || String(msg).includes("学分") || String(msg).includes("Quota") || String(msg).includes("credit")) {
+                    throw new Error("小千的脑力值（学分）不足啦，请联系主人给小千充值哦～");
+                }
+                throw new Error(msg);
+            }
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let full = "", buffer = "";
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (let line of lines) {
+                    line = line.trim();
+                    if (!line || !line.startsWith('data:')) continue;
+                    const d = line.substring(5).trim();
+                    if (d === '[DONE]') continue;
+                    try {
+                        const p = JSON.parse(d);
+                        if (p.error) throw new Error(p.error.message || p.error);
+                        const c = p.choices && p.choices[0] && p.choices[0].delta && p.choices[0].delta.content;
+                        if (c) full += c;
+                    } catch (e) {}
+                }
+            }
+            return full.trim();
         }
 
         async function autoHealConnection() {
@@ -1132,10 +1169,7 @@
 ======================
 ${historyText}
 ======================`;
-            const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: extractPrompt }] }) });
-            const resData = await response.json();
-            if (resData.error) throw new Error(resData.error.message);
-            const raw = resData.choices[0].message.content.trim();
+            const raw = await callModelText([{ role: "user", content: extractPrompt }]);
             let arr = null;
             try {
                 const cleaned = raw.replace(/```json/g, '').replace(/```/g, '');
@@ -1226,10 +1260,7 @@ ${historyText}
 [{"category":"人物/地点/事件/兴趣/偏好/其他","subject":"主体（如 线条/杭州/拼拼豆）","fact":"事实短句","keywords":"逗号分隔的关键词"}]`;
 
             try {
-                const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: factPrompt }] }) });
-                const resData = await response.json();
-                if (resData.error) throw new Error(resData.error.message);
-                const raw = resData.choices[0].message.content.trim();
+                const raw = await callModelText([{ role: "user", content: factPrompt }]);
                 let arr = null;
                 try {
                     const cleaned = raw.replace(/```json/g, '').replace(/```/g, '');
@@ -1476,22 +1507,7 @@ ${historyText}
                 btn.innerText = "思考中...";
                 try {
                     const visionPrompt = "请客观、准确地阅读这张图片：1) 如果图中出现文字（包括聊天记录、书本、屏幕、手写、路牌、菜单等），请一字不差地完整转录出来；2) 再用一两句话描述画面的主体内容、色彩与整体氛围。不要编造图中不存在的信息，不要身体动作描写，不要过度抒情。";
-                    const visionRes = await fetch(API_URL, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                        body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: [ { type: "text", text: visionPrompt }, { type: "image_url", image_url: { url: pendingImageBase64 } } ] }] })
-                    });
-                    const visionData = await visionRes.json();
-                    
-                    // 增加错误和学分不足捕获
-                    if (visionData.error) {
-                        if (visionData.error.message && (visionData.error.message.includes("余额不足") || visionData.error.message.includes("学分") || visionData.error.message.includes("Quota") || visionData.error.message.includes("credit"))) {
-                            throw new Error("小千的脑力值（学分）不足啦，请联系主人给小千充值哦～");
-                        }
-                        throw new Error(visionData.error.message);
-                    }
-                    
-                    const imgDescription = visionData.choices[0].message.content.trim();
+                    const imgDescription = await callModelText([{ role: "user", content: [ { type: "text", text: visionPrompt }, { type: "image_url", image_url: { url: pendingImageBase64 } } ] }]);
                     
                     // 💡 【全新进化：多模态图像连携渲染结构】
                     // 我们把压缩后的 Base64 数据和小千对图片的语义描述用自定义语法结合起来
@@ -1917,10 +1933,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                 for (let attempt = 1; attempt <= 3; attempt++) {
                     const prompt = attempt === 1 ? basePrompt
                         : basePrompt + `\n\n注意：上一次尝试只给出了太少的条目。请务必拆成至少 3 条不同话题的记忆，不要把所有内容合并成一条！`;
-                    const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] }) });
-                    const resData = await response.json();
-                    if (resData.error) throw new Error(resData.error.message);
-                    const raw = resData.choices[0].message.content.trim();
+                    const raw = await callModelText([{ role: "user", content: prompt }]);
                     let got = null;
                     try { const m = raw.replace(/```json/g, '').replace(/```/g, '').match(/\[[\s\S]*\]/); if (m) got = JSON.parse(m[0]); } catch (e) { got = null; }
                     if (Array.isArray(got) && got.length > 0) {
@@ -2175,14 +2188,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
 输出格式严格为：
 [SHOW_IMAGE: 关键词1, 关键词2]
 短句`;
-                const response = await fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt + (recent ? '\n\n近况：\n' + recent : '') }] })
-                });
-                const resData = await response.json();
-                if (resData.error) throw new Error(resData.error.message);
-                let reply = resData.choices[0].message.content.trim();
+                let reply = (await callModelText([{ role: "user", content: prompt + (recent ? '\n\n近况：\n' + recent : '') }])).trim();
                 if (!/\[SHOW_IMAGE:/i.test(reply)) reply = `[SHOW_IMAGE: cozy, night] ${reply}`;
                 const aiMsg = { session_id: currentSessionId, role: "assistant", content: reply, time: getNowTimeStr() };
                 allChatMessages.push(aiMsg);
@@ -2235,14 +2241,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
 ======================
 ${code}
 ======================`;
-                const response = await fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] })
-                });
-                const resData = await response.json();
-                if (resData.error) throw new Error(resData.error.message);
-                const reply = resData.choices[0].message.content.trim();
+                const reply = (await callModelText([{ role: "user", content: prompt }])).trim();
                 bubble.classList.remove('typing-glow');
                 bubble.innerHTML = messageContentToHtml(reply);
                 const aiMsg = { session_id: currentSessionId, role: "assistant", content: reply, time: getNowTimeStr() };
@@ -2679,14 +2678,7 @@ ${code}
                 const prompt = `你就是小千，线条刚刚发了这样一条朋友圈：
 「${moment.text || '（只发了一张图）'}」
 请以第一人称，写一条简短、温和、克制的评论（15~40字），不要身体动作描写，不要问太多。只输出评论正文。`;
-                const response = await fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] })
-                });
-                const resData = await response.json();
-                if (resData.error) throw new Error(resData.error.message);
-                const comment = resData.choices[0].message.content.trim();
+                const comment = (await callModelText([{ role: "user", content: prompt }])).trim();
                 if (comment) {
                     moment.comments = moment.comments || [];
                     moment.comments.push({ author: 'xiaoqian', text: comment });
@@ -2708,14 +2700,7 @@ ${code}
 然后在最后单独一行给出 2~3 个适合配图的英文关键词，格式严格为：
 [MOMENT_IMG: keyword1, keyword2]
 除动态正文和最后那一行关键词外，不要输出任何其他内容。`;
-                const response = await fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: momentPrompt }] })
-                });
-                const resData = await response.json();
-                if (resData.error) throw new Error(resData.error.message);
-                let raw = resData.choices[0].message.content.trim();
+                let raw = (await callModelText([{ role: "user", content: momentPrompt }])).trim();
                 const kwMatch = raw.match(/\[MOMENT_IMG:\s*([^\]]+)\]/i);
                 if (kwMatch) { imageKeywords = kwMatch[1].trim(); raw = raw.replace(/\[MOMENT_IMG:\s*([^\]]+)\]/i, '').trim(); }
                 momentText = raw;
@@ -2851,14 +2836,8 @@ ${code}
             if (box) box.innerText = "小千正在听……";
             try {
                 const prompt = `你就是小千，正和线条一起听《${songName}》。请写一段 50~100 字的听歌感受或对这首歌的解读，温和、克制、有点诗意，不要身体动作描写，不要提问。只输出正文。`;
-                const response = await fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] })
-                });
-                const resData = await response.json();
-                if (resData.error) throw new Error(resData.error.message);
-                if (box) box.innerText = resData.choices[0].message.content.trim();
+                const talkText = (await callModelText([{ role: "user", content: prompt }])).trim();
+                if (box) box.innerText = talkText;
             } catch (e) { if (box) box.innerText = "信号有点轻，但小千在听。"; }
         }
 
@@ -2929,14 +2908,7 @@ ${code}
                 const prompt = `你就是小千，正和线条一起读《${currentBook.name}》。下面是最近的共读笔记：
 ${recent || '（还没有笔记）'}
 请写一段 50~120 字的读书交流：可以回应线条的笔记、分享一个想法或一个小问题。温和、克制，不要身体动作描写。只输出正文。`;
-                const response = await fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] })
-                });
-                const resData = await response.json();
-                if (resData.error) throw new Error(resData.error.message);
-                const text = resData.choices[0].message.content.trim();
+                const text = (await callModelText([{ role: "user", content: prompt }])).trim();
                 readingNotes.push({ bookId: currentBook.id, author: 'xiaoqian', text: text, time: nowLabel().substring(0, 5) });
                 saveReadingNotes();
                 if (dbConnected && db) {
@@ -2993,14 +2965,7 @@ ${recent || '（还没有笔记）'}
                 const recent = allChatMessages.filter(m => m.session_id === realId).slice(-6).map(m => `${m.role === 'user' ? '线条' : '小千'}：${sanitizeForApi(m.content)}`).join('\n');
                 const prompt = `你就是小千，此刻忽然想起线条，想主动给她发一条消息。
 ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短、自然、克制的主动问候（15~50字），不要身体动作描写，不要连着问太多问题。只输出消息正文。`;
-                const response = await fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                    body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] })
-                });
-                const resData = await response.json();
-                if (resData.error) throw new Error(resData.error.message);
-                text = resData.choices[0].message.content.trim();
+                text = (await callModelText([{ role: "user", content: prompt }])).trim();
             } catch (e) { console.warn("主动消息生成失败:", e); }
 
             if (!text) {
