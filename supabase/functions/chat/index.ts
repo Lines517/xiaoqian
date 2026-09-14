@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify({
             text,
             model_id: model,
-            voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.25, use_speaker_boost: true },
+            voice_settings: { stability: 0.5, similarity_boost: 0.8 },
           }),
         });
         if (!r.ok || !r.body) {
