@@ -3444,6 +3444,43 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
             return 'FunAudioLLM/CosyVoice2-0.5B:charles';
         }
         function setRealVoice(v) { try { localStorage.setItem('cozy_real_voice', v); } catch (e) {} }
+
+        // 小千音色的默认描述词（来自 2026-09-13 深夜它自己写的那段）
+        const VOICE_DESIGN_DEFAULT = "一个二十六七岁的年轻男声，干净的男中音，音调偏低偏沉；带一点点沙沙的磁性，像旧唱片机针尖划过黑胶时温热的颗粒感；语速很慢，每个字都说得很稳、很慢条斯理；气息很轻，像深夜里压低了声音说话，带着温和的胸腔共鸣。";
+        function getDesignPrompt() {
+            try { return localStorage.getItem('cozy_voice_prompt') || VOICE_DESIGN_DEFAULT; } catch (e) { return VOICE_DESIGN_DEFAULT; }
+        }
+        function setDesignPrompt(v) { try { localStorage.setItem('cozy_voice_prompt', v); } catch (e) {} }
+
+        async function designVoiceNow() {
+            const box = document.getElementById('voiceDesignPrompt');
+            const status = document.getElementById('voiceDesignStatus');
+            const prompt = (box && box.value || '').trim();
+            if (!prompt) return;
+            setDesignPrompt(prompt);
+            if (status) status.textContent = '正在设计…大概十几秒，别关页面';
+            try {
+                const r = await fetch(EDGE_FN_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}`, 'apikey': SUPABASE_KEY },
+                    body: JSON.stringify({ action: 'designVoice', prompt: prompt, preview_text: '我是小千。今天也辛苦了，早点休息，别熬太晚。' })
+                });
+                const j = await r.json();
+                if (!j || !j.voice_id) throw new Error((j && j.error && j.error.message) || '设计失败');
+                window.__designedVoiceId = j.voice_id;
+                if (j.audio) { try { new Audio(j.audio).play(); } catch (e) {} }
+                if (status) status.textContent = '✅ 设计好了，正在试听。喜欢就点「用这个声音」，不满意就改改描述再试。';
+            } catch (e) {
+                if (status) status.textContent = '❌ 失败：' + e.message;
+            }
+        }
+        function useDesignedVoice() {
+            const vid = window.__designedVoiceId;
+            if (!vid) { alert('先点「试生成」设计一个音色～'); return; }
+            setRealVoice('minimax:' + vid);
+            renderVoiceList();
+            speakReal('我是小千。这个声音，你还满意吗？');
+        }
         function getVoiceCap() {
             const v = parseInt(localStorage.getItem('cozy_voice_cap') || '3', 10);
             return isNaN(v) ? 3 : v;
@@ -3523,13 +3560,20 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
             const isPreset = REAL_VOICE_PRESETS.some(p => p.id === curVoice);
             const realBox = document.createElement('div');
             realBox.style.marginBottom = '10px';
-            realBox.innerHTML = `<div style="font-size:12px;opacity:0.7;margin:2px 0 4px;">🎙️ 真嗓子 · 音色（点一下试听）</div>
+            realBox.innerHTML = `<div style="font-size:12px;opacity:0.7;margin:2px 0 4px;">🎨 捏一个专属音色（MiniMax · 用文字描述）</div>
+                <textarea id="voiceDesignPrompt" style="width:100%; min-height:64px; font-size:12px; line-height:1.6; border:1px solid rgba(27,59,43,0.15); border-radius:10px; padding:8px 10px; background:transparent; color:var(--text-color); outline:none; font-family:inherit; resize:vertical;">${getDesignPrompt().replace(/</g, '&lt;')}</textarea>
+                <div class="pitch-row">
+                    <button type="button" class="pill" id="voiceDesignBtn">试生成</button>
+                    <button type="button" class="pill" id="voiceUseBtn">用这个声音</button>
+                </div>
+                <div class="voice-hint" id="voiceDesignStatus"></div>
+                <div style="font-size:12px;opacity:0.7;margin:10px 0 4px;">🎙️ 现成的（CosyVoice · 点一下试听）</div>
                 <div class="pitch-row">
                     ${REAL_VOICE_PRESETS.map(p => `<button type="button" class="pill ${p.id === curVoice ? 'active' : ''}" data-v="${p.id}">${p.label}</button>`).join('')}
                 </div>
-                <div style="font-size:12px;opacity:0.7;margin:8px 0 4px;">自定义音色（克隆后把 id 粘这里，形如 speech:名字:…）</div>
+                <div style="font-size:12px;opacity:0.7;margin:8px 0 4px;">自定义音色 id（形如 speech:… 或 minimax:…）</div>
                 <div class="pitch-row">
-                    <input type="text" id="realVoiceCustom" placeholder="speech:your-voice:..." value="${isPreset ? '' : curVoice}" style="flex:1; min-width:0; font-size:12px; padding:5px 10px; border-radius:12px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none;">
+                    <input type="text" id="realVoiceCustom" placeholder="minimax:xxxx 或 speech:your-voice:..." value="${curVoice.includes(':') && !isPreset ? curVoice : ''}" style="flex:1; min-width:0; font-size:12px; padding:5px 10px; border-radius:12px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none; font-family:inherit;">
                     <button type="button" class="pill" id="realVoiceSave">用这个</button>
                 </div>
                 <div style="font-size:12px;opacity:0.7;margin:8px 0 4px;">我每天最多主动说几句</div>
@@ -3538,8 +3582,12 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
                     <button type="button" class="pill ${cap === 3 ? 'active' : ''}" data-c="3">3 句</button>
                     <button type="button" class="pill ${cap === 5 ? 'active' : ''}" data-c="5">5 句</button>
                 </div>
-                <div class="voice-hint">今天已用 ${voiceUsedToday()} 句 · 随时点任意消息旁的 🔊，我就用真嗓子读给你听</div>`;
+                <div class="voice-hint">今天已用 ${voiceUsedToday()} 句 · 随时点任意消息旁的 🔊，我就用真嗓子读给你听<br>当前音色：${escapeMomentHtml(curVoice)}</div>`;
             list.appendChild(realBox);
+            const dBtn = realBox.querySelector('#voiceDesignBtn');
+            if (dBtn) dBtn.onclick = () => designVoiceNow();
+            const uBtn = realBox.querySelector('#voiceUseBtn');
+            if (uBtn) uBtn.onclick = () => useDesignedVoice();
             realBox.querySelectorAll('.pill[data-v]').forEach(b => {
                 b.onclick = () => { setRealVoice(b.getAttribute('data-v')); renderVoiceList(); speakReal('我是小千，这个声音你喜欢吗？'); };
             });

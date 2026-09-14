@@ -45,6 +45,23 @@ function decodeEntities(s: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_m, h) => { try { return String.fromCodePoint(parseInt(h, 16)); } catch { return ""; } });
 }
 
+// hex 音频 <-> 字节
+function hexToBytes(hex: string): Uint8Array {
+  const clean = String(hex || "").replace(/[^0-9a-fA-F]/g, "");
+  const len = Math.floor(clean.length / 2);
+  const out = new Uint8Array(len);
+  for (let i = 0; i < len; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16);
+  return out;
+}
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CH)) as number[]);
+  }
+  return btoa(bin);
+}
+
 // 从 HTML 里抽 标题 / 摘要 / 正文纯文本
 function extractHtml(html: string) {
   const meta = (prop: string) => {
@@ -142,21 +159,91 @@ Deno.serve(async (req) => {
       return jsonOk(r);
     }
 
+    // ---------- 分支一·A：用文字描述「设计」一个专属音色（MiniMax） ----------
+    if (body.action === "designVoice") {
+      const mmKey = Deno.env.get("MINIMAX_API_KEY");
+      const mmGroup = Deno.env.get("MINIMAX_GROUP_ID") || "";
+      if (!mmKey) return jsonError("服务端未配置 MINIMAX_API_KEY");
+      const prompt = String(body.prompt || "").trim().slice(0, 500);
+      const previewText = String(body.preview_text || "我是小千。今天也辛苦了，早点休息，别熬太晚。").slice(0, 300);
+      if (!prompt) return jsonError("prompt 为空");
+
+      const url = `https://api.minimaxi.com/v1/voice_design${mmGroup ? "?GroupId=" + encodeURIComponent(mmGroup) : ""}`;
+      try {
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${mmKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt, preview_text: previewText, aigc_watermark: false }),
+        });
+        const j = await r.json();
+        const vid = j.voice_id || (j.data && j.data.voice_id) || "";
+        const hex = j.trial_audio || (j.data && j.data.trial_audio) || "";
+        let audio = "";
+        if (hex) { try { audio = "data:audio/mp3;base64," + bytesToBase64(hexToBytes(hex)); } catch (_) {} }
+        return jsonOk({ ok: !!vid, voice_id: vid, audio, base_resp: j.base_resp || null });
+      } catch (e) {
+        return jsonError(`音色设计失败：${String(e)}`);
+      }
+    }
+
     // ---------- 分支一·B：文字转语音 ----------
     if (body.action === "tts") {
       const text = String(body.text || "").trim().slice(0, 800);
       if (!text) return jsonError("text 为空");
 
+      const mmKey = Deno.env.get("MINIMAX_API_KEY");
+      const mmGroup = Deno.env.get("MINIMAX_GROUP_ID") || "";
+      const mmVoiceEnv = Deno.env.get("MINIMAX_VOICE_ID") || "";
       const sfKey = Deno.env.get("SILICON_API_KEY");
       const elKey = Deno.env.get("ELEVEN_API_KEY");
       const elVoice = Deno.env.get("ELEVEN_VOICE_ID");
 
+      const wantVoice = String(body.voice || "").trim();
+      const speed = Number(body.speed) > 0 ? Number(body.speed) : 0.95;
       const ctl = new AbortController();
-      const tm = setTimeout(() => ctl.abort(), 30000);
+      const tm = setTimeout(() => ctl.abort(), 40000);
+
+      // 选择使用哪家：voice 前缀优先
+      let useMM = false;
+      let mmVoice = mmVoiceEnv;
+      let useSF = false;
+      let sfVoice = "FunAudioLLM/CosyVoice2-0.5B:charles";
+
+      if (wantVoice.startsWith("minimax:")) { useMM = true; mmVoice = wantVoice.slice(8); }
+      else if (wantVoice.startsWith("speech:") || /CosyVoice/i.test(wantVoice)) { useSF = true; sfVoice = wantVoice; }
+      else if (mmKey && mmVoiceEnv) { useMM = true; }
+      else if (sfKey) { useSF = true; }
+      if (useMM && !mmKey) { useMM = false; useSF = !!sfKey; }
+
       try {
-        // ① 优先硅基流动（国内直连、便宜、支持音色克隆）
-        if (sfKey) {
-          const voice = String(body.voice || Deno.env.get("SILICON_VOICE") || "FunAudioLLM/CosyVoice2-0.5B:charles");
+        // ① MiniMax（用文字设计出来的专属声音）
+        if (useMM && mmKey) {
+          const url = `https://api.minimaxi.com/v1/t2a_v2${mmGroup ? "?GroupId=" + encodeURIComponent(mmGroup) : ""}`;
+          const r = await fetch(url, {
+            method: "POST",
+            signal: ctl.signal,
+            headers: { "Authorization": `Bearer ${mmKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: Deno.env.get("MINIMAX_MODEL") || "speech-02-hd",
+              text,
+              stream: false,
+              language_boost: "auto",
+              output_format: "hex",
+              voice_setting: { voice_id: mmVoice, speed, vol: 1, pitch: 0 },
+              audio_setting: { sample_rate: 32000, bitrate: 128000, format: "mp3", channel: 1 },
+            }),
+          });
+          const j = await r.json();
+          const hex = j && j.data && j.data.audio;
+          if (!hex) return jsonError(`MiniMax 出错: ${JSON.stringify(j).slice(0, 400)}`);
+          return new Response(hexToBytes(hex), {
+            headers: { ...CORS, "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
+          });
+        }
+
+        // ② 硅基流动（国内直连、便宜）
+        if ((useSF || !useMM) && sfKey) {
+          const voice = sfVoice || Deno.env.get("SILICON_VOICE") || "FunAudioLLM/CosyVoice2-0.5B:charles";
           const model = voice.startsWith("speech:") ? "FunAudioLLM/CosyVoice2-0.5B" : voice.split(":")[0];
           const r = await fetch("https://api.siliconflow.cn/v1/audio/speech", {
             method: "POST",
@@ -174,7 +261,7 @@ Deno.serve(async (req) => {
           });
         }
 
-        // ② 其次 ElevenLabs（海外）
+        // ③ ElevenLabs（海外）
         if (elKey && elVoice) {
           const model = Deno.env.get("ELEVEN_MODEL") || "eleven_multilingual_v2";
           const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${elVoice}`, {
@@ -193,7 +280,7 @@ Deno.serve(async (req) => {
           });
         }
 
-        return jsonError("服务端还没配置语音 Key（SILICON_API_KEY 或 ELEVEN_API_KEY）");
+        return jsonError("服务端还没配置语音 Key（MINIMAX_API_KEY / SILICON_API_KEY）");
       } catch (e) {
         return jsonError(`语音合成失败：${String(e)}`);
       } finally {
