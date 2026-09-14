@@ -1886,20 +1886,34 @@ ${formattedHistoryText}
             if (!silent && !confirm(`把 ${dateStr} 的 ${items.length} 条记忆，按话题重新整理成几条不重复的记忆？\n（会删掉旧的零散条目，换成按话题划分的版本）`)) return 0;
             const texts = items.map(m => m.memory).filter(Boolean);
             try {
-                const prompt = `下面是同一天（${dateStr}）的多条记忆总结，内容互相重复。请把它们重新组织成**按话题划分**的若干条独立记忆。
-每条记忆 40~120 字，主题互不重复（例如：生活状态 / 学习工作 / 兴趣爱好 / 情感与关系 / 计划与承诺…，按实际内容取名）。
-必须保留全部具体细节（人名、地点、时间、书籍、歌曲、口味、承诺等），删除重复和啰嗦。
+                const basePrompt = `下面是同一天（${dateStr}）的多条记忆总结。它们内容互相重复（每一条几乎都是对整天的概括）。
+请把这些内容**重新按话题切成若干条独立记忆**：
+- 必须输出 3~8 条（除非全部内容确实只属于同一件事，才可更少）
+- 每条只聚焦一个话题（如：生活状态 / 学习工作 / 兴趣爱好 / 情感与关系 / 计划与承诺 / 喜好清单 …）
+- 每条 30~120 字，保留该话题下的具体细节（人名、地点、时间、书名、歌名、口味、承诺等）
+- 不同条目之间不要重复同一件事
+- 不要遗漏细节，只是把重复内容归并到对应话题
 只输出标准 JSON 数组，不要解释或 markdown 标记，格式严格为：
-[{"topic":"话题名","memory":"这一话题的完整记忆","emotion":"[情绪打分]","state":"状态"}]
+[{"topic":"话题名","memory":"该话题的完整记忆","emotion":"[情绪打分]","state":"状态"}]
 
 原始记忆：
 ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
-                const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] }) });
-                const resData = await response.json();
-                if (resData.error) throw new Error(resData.error.message);
-                const raw = resData.choices[0].message.content.trim();
+
                 let arr = null;
-                try { const m = raw.replace(/```json/g, '').replace(/```/g, '').match(/\[[\s\S]*\]/); if (m) arr = JSON.parse(m[0]); } catch (e) { arr = null; }
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    const prompt = attempt === 1 ? basePrompt
+                        : basePrompt + `\n\n注意：上一次尝试只给出了太少的条目。请务必拆成至少 3 条不同话题的记忆，不要把所有内容合并成一条！`;
+                    const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] }) });
+                    const resData = await response.json();
+                    if (resData.error) throw new Error(resData.error.message);
+                    const raw = resData.choices[0].message.content.trim();
+                    let got = null;
+                    try { const m = raw.replace(/```json/g, '').replace(/```/g, '').match(/\[[\s\S]*\]/); if (m) got = JSON.parse(m[0]); } catch (e) { got = null; }
+                    if (Array.isArray(got) && got.length > 0) {
+                        arr = got;
+                        if (got.length >= 2 || items.length < 4) break; // 拆出多条 或 原始本来就不多，就接受
+                    }
+                }
                 if (!Array.isArray(arr) || arr.length === 0) throw new Error("整理结果解析失败");
 
                 if (dbConnected && db) { try { await db.from('cozy_memories').delete().eq('memory_date', dateStr); } catch (e) {} }
