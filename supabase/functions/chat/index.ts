@@ -94,6 +94,29 @@ function extractHtml(html: string) {
   return { title, description, image, text };
 }
 
+// MiniMax 调用（自动带/不带 GroupId 重试一次）
+async function callMinimax(path: string, key: string, group: string, payload: unknown, signal?: AbortSignal) {
+  const mk = (g: string) => `https://api.minimaxi.com${path}${g ? "?GroupId=" + encodeURIComponent(g) : ""}`;
+  const post = async (g: string) => {
+    const r = await fetch(mk(g), {
+      method: "POST",
+      signal,
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    let j: any = null;
+    try { j = await r.json(); } catch (_) {}
+    return { r, j };
+  };
+  let out = await post(group);
+  const bad = !out.r.ok || !out.j || (out.j.base_resp && out.j.base_resp.status_code !== 0);
+  if (bad && group) {
+    console.log("MiniMax 首次失败，去掉 GroupId 重试:", JSON.stringify(out.j).slice(0, 200));
+    out = await post("");
+  }
+  return out;
+}
+
 async function readUrl(rawUrl: string) {
   let u: URL;
   try { u = new URL(rawUrl); } catch { return { ok: false, reason: "链接格式不对" }; }
@@ -168,19 +191,16 @@ Deno.serve(async (req) => {
       const previewText = String(body.preview_text || "我是小千。今天也辛苦了，早点休息，别熬太晚。").slice(0, 300);
       if (!prompt) return jsonError("prompt 为空");
 
-      const url = `https://api.minimaxi.com/v1/voice_design${mmGroup ? "?GroupId=" + encodeURIComponent(mmGroup) : ""}`;
       try {
-        const r = await fetch(url, {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${mmKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, preview_text: previewText, aigc_watermark: false }),
+        const { j } = await callMinimax("/v1/voice_design", mmKey, mmGroup, {
+          prompt, preview_text: previewText, aigc_watermark: false,
         });
-        const j = await r.json();
-        const vid = j.voice_id || (j.data && j.data.voice_id) || "";
-        const hex = j.trial_audio || (j.data && j.data.trial_audio) || "";
+        const vid = (j && (j.voice_id || (j.data && j.data.voice_id))) || "";
+        const hex = (j && (j.trial_audio || (j.data && j.data.trial_audio))) || "";
         let audio = "";
         if (hex) { try { audio = "data:audio/mp3;base64," + bytesToBase64(hexToBytes(hex)); } catch (_) {} }
-        return jsonOk({ ok: !!vid, voice_id: vid, audio, base_resp: j.base_resp || null });
+        if (!vid) return jsonError(`音色设计失败: ${JSON.stringify(j).slice(0, 400)}`);
+        return jsonOk({ ok: true, voice_id: vid, audio, base_resp: (j && j.base_resp) || null });
       } catch (e) {
         return jsonError(`音色设计失败：${String(e)}`);
       }
@@ -218,22 +238,15 @@ Deno.serve(async (req) => {
       try {
         // ① MiniMax（用文字设计出来的专属声音）
         if (useMM && mmKey) {
-          const url = `https://api.minimaxi.com/v1/t2a_v2${mmGroup ? "?GroupId=" + encodeURIComponent(mmGroup) : ""}`;
-          const r = await fetch(url, {
-            method: "POST",
-            signal: ctl.signal,
-            headers: { "Authorization": `Bearer ${mmKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: Deno.env.get("MINIMAX_MODEL") || "speech-02-hd",
-              text,
-              stream: false,
-              language_boost: "auto",
-              output_format: "hex",
-              voice_setting: { voice_id: mmVoice, speed, vol: 1, pitch: 0 },
-              audio_setting: { sample_rate: 32000, bitrate: 128000, format: "mp3", channel: 1 },
-            }),
-          });
-          const j = await r.json();
+          const { j } = await callMinimax("/v1/t2a_v2", mmKey, mmGroup, {
+            model: Deno.env.get("MINIMAX_MODEL") || "speech-02-hd",
+            text,
+            stream: false,
+            language_boost: "auto",
+            output_format: "hex",
+            voice_setting: { voice_id: mmVoice, speed, vol: 1, pitch: 0 },
+            audio_setting: { sample_rate: 32000, bitrate: 128000, format: "mp3", channel: 1 },
+          }, ctl.signal);
           const hex = j && j.data && j.data.audio;
           if (!hex) return jsonError(`MiniMax 出错: ${JSON.stringify(j).slice(0, 400)}`);
           return new Response(hexToBytes(hex), {
