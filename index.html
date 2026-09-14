@@ -855,6 +855,46 @@
         }
 
         // ================= 【2. 本地存储管理与云端实时拉回（微信同款无缝两端同步）】 =================
+        // 分页拉取某一天的全部聊天（突破 Supabase 单次 1000 条上限）
+        async function fetchAllBySession(sessionId) {
+            const pageSize = 1000;
+            let from = 0;
+            let all = [];
+            while (true) {
+                const { data, error } = await db
+                    .from('cozy_chats')
+                    .select('*')
+                    .eq('session_id', sessionId)
+                    .order('created_at', { ascending: true })
+                    .order('id', { ascending: true })
+                    .range(from, from + pageSize - 1);
+                if (error) throw error;
+                if (!data || data.length === 0) break;
+                all = all.concat(data);
+                if (data.length < pageSize) break;
+                from += pageSize;
+                if (from > 50000) break; // 安全上限
+            }
+            return all;
+        }
+
+        // 分页拉取所有聊天（用于 syncWithCloud）
+        async function fetchAllChatsPaged(buildQuery) {
+            const pageSize = 1000;
+            let from = 0;
+            let all = [];
+            while (true) {
+                const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+                if (error) throw error;
+                if (!data || data.length === 0) break;
+                all = all.concat(data);
+                if (data.length < pageSize) break;
+                from += pageSize;
+                if (from > 50000) break;
+            }
+            return all;
+        }
+
         async function loadChats(sessionId) {
             const container = document.getElementById('chatMessages');
             const input = document.getElementById('userInput');
@@ -873,13 +913,8 @@
             // 1. 核心强同步：如果有云端连接，优先通过 Supabase 精准拉取
             if (dbConnected && db) {
                 try {
-                    const { data, error } = await db
-                        .from('cozy_chats')
-                        .select('*')
-                        .eq('session_id', sessionId)
-                        .order('created_at', { ascending: true });
-
-                    if (error) throw error;
+                    const data = await fetchAllBySession(sessionId);
+                    console.log(`🚀 从云端拉回 "${sessionId}" 共 ${data.length} 条`);
 
                     if (data && data.length > 0) {
                         console.log(`🚀 成功从 Supabase 云端拉回 ${data.length} 条 "${sessionId}" 的最新同步记录`);
@@ -909,21 +944,21 @@
                         union.forEach(m => appendMessageUI(m.role, m.content, m.time));
                         saveChats();
 
-                        // 把本地独有、云端缺失的消息回传云端（补救此前可能的误删），并尽量保留原时间
+                        // 把本地独有、云端缺失的消息回传云端（补救误删），并保证落在正确的日期里
                         for (const m of union) {
                             const k = (m.role || '') + '|' + String(m.content || '').trim();
-                            if (!cloudKeys.has(k)) {
-                                try {
-                                    const row = { session_id: sessionId, role: m.role, content: m.content };
-                                    if (m.time && /^\d{4}-\d{2}-\d{2}T/.test(m.time)) {
-                                        row.created_at = m.time; // 已是完整 ISO
-                                    } else if (m.time && /^\d{2}:\d{2}$/.test(m.time)) {
-                                        row.created_at = `${sessionId}T${m.time}:00+08:00`; // 用原北京时间的时分
-                                    }
-                                    await db.from('cozy_chats').insert([row]);
-                                }
-                                catch (e) { console.warn("回传本地消息失败:", e.message); }
+                            if (cloudKeys.has(k)) continue;
+                            let createdAt;
+                            if (m.time && /^\d{4}-\d{2}-\d{2}T/.test(m.time)) {
+                                createdAt = m.time;
+                            } else if (m.time && /^\d{2}:\d{2}$/.test(m.time)) {
+                                createdAt = `${sessionId}T${m.time}:00+08:00`;
+                            } else {
+                                createdAt = `${sessionId}T12:00:00+08:00`; // 无时间则放在当天中午，绝不使用"现在"
                             }
+                            try {
+                                await db.from('cozy_chats').insert([{ session_id: sessionId, role: m.role, content: m.content, created_at: createdAt }]);
+                            } catch (e) { console.warn("回传本地消息失败:", e.message); }
                         }
 
                         container.scrollTop = container.scrollHeight;
@@ -1020,7 +1055,7 @@
             try {
                 // 只拉取最近 3 天的聊天，避免拉全量导致浏览器卡死（旧消息走 loadChats 按天拉取）
                 const recentCutoff = getCozySessionId(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000));
-                const { data: cloudChats } = await db.from('cozy_chats').select('*').gte('session_id', recentCutoff).order('created_at', { ascending: true });
+                const cloudChats = await fetchAllChatsPaged(() => db.from('cozy_chats').select('*').gte('session_id', recentCutoff).order('created_at', { ascending: true }).order('id', { ascending: true }));
                 
                 if (cloudChats && cloudChats.length > 0) {
                     // 去除云端中内容和session_id完全重复的无用垃圾数据（保留第一条）
