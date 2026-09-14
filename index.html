@@ -583,6 +583,7 @@
             <div class="app-header">
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>朋友圈</h2>
+                <button type="button" id="momentFreqBtn" onclick="cycleMomentFreq()" title="小千自动发朋友圈的频率（点一下切换）" style="margin-left:auto; font-size:11px; padding:3px 10px; border-radius:12px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); cursor:pointer; white-space:nowrap;">🌙 少</button>
             </div>
             <div class="moments-compose">
                 <textarea id="momentInput" placeholder="此刻的想法..."></textarea>
@@ -971,6 +972,7 @@
             requestNotificationPermission();
             updateAnniversary();
             restoreModelSelect();
+            updateMomentFreqBtn();
 
             // 稍微延长 300 毫秒，等手机浏览器的 DOM、CORS 环境和 SDK 彻底加载完毕后，再进行同步拉回
             setTimeout(async () => {
@@ -3090,11 +3092,39 @@ ${code}
             await saveMomentToCloud(moment);
         }
 
+        // 小千自动发朋友圈的频率：关闭 / 少（默认） / 正常
+        const MOMENT_FREQ = {
+            off:    { label: '🔕 关闭', minGapH: 99999, prob: 0 },
+            low:    { label: '🌙 少',   minGapH: 12,    prob: 0.18 },
+            normal: { label: '☀️ 正常', minGapH: 6,     prob: 0.25 },
+        };
+        function getMomentFreq() {
+            try { const v = localStorage.getItem('cozy_moment_freq'); if (v && MOMENT_FREQ[v]) return v; } catch (e) {}
+            return 'low';
+        }
+        function setMomentFreq(v) {
+            if (!MOMENT_FREQ[v]) return;
+            try { localStorage.setItem('cozy_moment_freq', v); } catch (e) {}
+            updateMomentFreqBtn();
+        }
+        function cycleMomentFreq() {
+            const order = ['low', 'off', 'normal'];
+            setMomentFreq(order[(order.indexOf(getMomentFreq()) + 1) % order.length]);
+        }
+        function updateMomentFreqBtn() {
+            const b = document.getElementById('momentFreqBtn');
+            if (!b) return;
+            b.textContent = MOMENT_FREQ[getMomentFreq()].label;
+        }
+
         function maybeAutoCyberMoment() {
             try {
+                const v = getMomentFreq();
+                if (v === 'off') return;
+                const cfg = MOMENT_FREQ[v];
                 const last = parseInt(localStorage.getItem('cozy_last_moment_time') || '0', 10);
-                if (Date.now() - last < 3 * 60 * 60 * 1000) return; // 至少 3 小时一条
-                if (Math.random() < 0.25) { generateCyberMoment(false); }
+                if (Date.now() - last < cfg.minGapH * 60 * 60 * 1000) return;
+                if (Math.random() < cfg.prob) { generateCyberMoment(false); }
             } catch (e) {}
         }
 
