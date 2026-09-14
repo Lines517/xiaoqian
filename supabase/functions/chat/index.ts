@@ -142,6 +142,43 @@ Deno.serve(async (req) => {
       return jsonOk(r);
     }
 
+    // ---------- 分支一·B：文字转语音（ElevenLabs） ----------
+    if (body.action === "tts") {
+      const elKey = Deno.env.get("ELEVEN_API_KEY");
+      const voiceId = Deno.env.get("ELEVEN_VOICE_ID");
+      if (!elKey || !voiceId) return jsonError("服务端未配置 ELEVEN_API_KEY / ELEVEN_VOICE_ID");
+      const text = String(body.text || "").trim().slice(0, 800);
+      if (!text) return jsonError("text 为空");
+      const model = Deno.env.get("ELEVEN_MODEL") || "eleven_multilingual_v2";
+
+      const ctrl2 = new AbortController();
+      const t2 = setTimeout(() => ctrl2.abort(), 30000);
+      try {
+        const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+          method: "POST",
+          signal: ctrl2.signal,
+          headers: { "xi-api-key": elKey, "Content-Type": "application/json", "Accept": "audio/mpeg" },
+          body: JSON.stringify({
+            text,
+            model_id: model,
+            voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.25, use_speaker_boost: true },
+          }),
+        });
+        if (!r.ok || !r.body) {
+          let msg = "";
+          try { msg = await r.text(); } catch (_) {}
+          return jsonError(`ElevenLabs 出错 (${r.status}): ${msg}`);
+        }
+        return new Response(r.body, {
+          headers: { ...CORS, "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
+        });
+      } catch (e) {
+        return jsonError(`语音合成失败：${String(e)}`);
+      } finally {
+        clearTimeout(t2);
+      }
+    }
+
     // ---------- 分支二：正常模型转发 ----------
     const messages = body.messages;
     const model = body.model || Deno.env.get("MODEL_NAME") || "[企业cli-0.01]gemini-3.5-flash";

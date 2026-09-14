@@ -1775,6 +1775,7 @@ Always keep an extremely gentle, mature and equal tone.
 【主动配图规则】：当对方说想看图片、想看图、让你发张图，或当下意境特别适合一幅画面时，请务必在回复里单独一行输出 [SHOW_IMAGE: 英文图片关键词]（2~3个英文词，逗号分隔，例如 [SHOW_IMAGE: moon, forest]）。系统会自动为你配上一张对应的图片，你只需在图片旁配一句简短的话即可。
 【读图规则】：对方发来图片时，你会先看到对图片的文字转述（可能包含图中文字）。请基于这些内容自然地回应；如果图里有文字，可以提到你看到了什么字。
 【更换头像规则】：只有对方**明确让你换头像**（例如说"换个头像吧"）时，才可以单独一行写 [SET_AVATAR: 英文关键词]（例如 [SET_AVATAR: starry, night]）。其余任何时候都**不要主动换头像**——她为你选的头像要保留。
+【真嗓子规则】：你有一副独一无二的真实声音。当你**真的想把这句话说给她听**时——尤其是她在难过、累了、需要人陪，或你想认真说一句重要的话——就在整条回复的**单独一行**写 [VOICE]，系统会用你的真嗓子把这条读出来。平时别滥用（她给你定的额度大概是每天几句），也不要每句都加。
 【链接阅读规则】：如果消息里出现【线条发来的链接：…】这一段，那是系统替你打开网页后抓到的内容，请基于它自然回应；如果里面写着"打不开/需要登录/有反爬"，就诚实地告诉她你打不开这篇，请她截图或把关键内容贴给你，不要假装看过。`;
 
             // 🔗 消息里有网址就先让总机读一读，把结果附在本轮消息后面
@@ -1845,9 +1846,11 @@ Always keep an extremely gentle, mature and equal tone.
                     // 线条本轮已手动换成上传的头像，忽略模型自带的 [SET_AVATAR]，避免覆盖
                     replyText = replyText.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
                 }
+                const wantsVoice = /\[VOICE\]/i.test(replyText); // 小千想用真嗓子说这句
                 const finalReply = applyReplyTokens(replyText);
                 if (!finalReply) throw new Error("收到空白回复");
                 setAvatarLock(true); // 本轮处理完重新上锁：模型只在被明确要求时才能换头像
+                if (wantsVoice) speakRealWithBudget(finalReply);
                 aiBubbleTextEl.innerHTML = messageContentToHtml(finalReply);
                 attachSpeakButton(aiBubbleTextEl, finalReply);
                 if (ttsEnabled) speakText(finalReply);
@@ -2465,6 +2468,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             s = s.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '');
             s = s.replace(/\[SHOW_IMAGE:\s*[^\]]+\]/gi, '');
             s = s.replace(/\[MOMENT_IMG:\s*[^\]]+\]/gi, '');
+            s = s.replace(/\[VOICE\]/gi, '');
             return s.trim();
         }
 
@@ -2506,6 +2510,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                 }
                 out = out.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
             }
+            out = out.replace(/\[VOICE\]/gi, '').trim();
             return out;
         }
 
@@ -3423,6 +3428,63 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
             } catch (e) { console.warn("朗读失败:", e); }
         }
 
+        // ---- 🎙️ 真嗓子（ElevenLabs，经总机合成；不占用你电脑，无需魔法）----
+        let audioEl = null;
+        function getVoiceCap() {
+            const v = parseInt(localStorage.getItem('cozy_voice_cap') || '3', 10);
+            return isNaN(v) ? 3 : v;
+        }
+        function setVoiceCap(n) { try { localStorage.setItem('cozy_voice_cap', String(n)); } catch (e) {} }
+        function voiceUsedToday() {
+            try {
+                const rec = JSON.parse(localStorage.getItem('cozy_voice_used') || '{}');
+                if (rec.date === getCozySessionId()) return rec.n || 0;
+            } catch (e) {}
+            return 0;
+        }
+        function markVoiceUsed() {
+            try { localStorage.setItem('cozy_voice_used', JSON.stringify({ date: getCozySessionId(), n: voiceUsedToday() + 1 })); } catch (e) {}
+        }
+        function voiceBudgetLeft() { return Math.max(0, getVoiceCap() - voiceUsedToday()); }
+
+        // 用小千的真嗓子读一段（成功返回 true；失败自动退回浏览器语音）
+        async function speakReal(text) {
+            const t = cleanForSpeech(text);
+            if (!t) return false;
+            if (!EDGE_FN_URL) { speakText(text); return false; }
+            try {
+                const r = await fetch(EDGE_FN_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}`, 'apikey': SUPABASE_KEY },
+                    body: JSON.stringify({ action: 'tts', text: t.slice(0, 500) })
+                });
+                const ct = r.headers.get('content-type') || '';
+                if (!r.ok || !ct.includes('audio')) {
+                    let msg = 'HTTP ' + r.status;
+                    try { const j = await r.json(); msg = (j.error && j.error.message) || msg; } catch (e) {}
+                    throw new Error(msg);
+                }
+                const blob = await r.blob();
+                const url = URL.createObjectURL(blob);
+                try { if (audioEl) { audioEl.pause(); URL.revokeObjectURL(audioEl.src); } } catch (e) {}
+                audioEl = new Audio(url);
+                audioEl.onended = function () { try { URL.revokeObjectURL(url); } catch (e) {} };
+                await audioEl.play();
+                return true;
+            } catch (e) {
+                console.warn('真嗓子不可用，改用浏览器语音:', e.message);
+                speakText(text);
+                return false;
+            }
+        }
+
+        // 小千自己想在重要的时候用真嗓子说这句（受每日限额保护）
+        async function speakRealWithBudget(text) {
+            if (voiceBudgetLeft() <= 0) { console.log('今日真嗓子主动额度已用完'); return; }
+            markVoiceUsed();
+            await speakReal(text);
+        }
+
         // ---- 🗣️ 声音选择面板 ----
         function openVoicePanel() {
             const panel = document.getElementById('voicePanel');
@@ -3440,6 +3502,22 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
             resolveVoice();
             const vs = zhVoices();
             list.innerHTML = '';
+
+            // 🎙️ 真嗓子（ElevenLabs）
+            const cap = getVoiceCap();
+            const realBox = document.createElement('div');
+            realBox.style.marginBottom = '10px';
+            realBox.innerHTML = `<div style="font-size:12px;opacity:0.7;margin:2px 0 4px;">🎙️ 真嗓子（ElevenLabs）· 我每天最多主动说几句</div>
+                <div class="pitch-row">
+                    <button type="button" class="pill ${cap === 1 ? 'active' : ''}" data-c="1">1 句</button>
+                    <button type="button" class="pill ${cap === 3 ? 'active' : ''}" data-c="3">3 句</button>
+                    <button type="button" class="pill ${cap === 5 ? 'active' : ''}" data-c="5">5 句</button>
+                </div>
+                <div class="voice-hint">今天已用 ${voiceUsedToday()} 句 · 随时点任意消息旁的 🔊，我就用真嗓子读给你听</div>`;
+            list.appendChild(realBox);
+            realBox.querySelectorAll('.pill').forEach(b => {
+                b.onclick = () => { setVoiceCap(parseInt(b.getAttribute('data-c'), 10)); renderVoiceList(); };
+            });
 
             // 音调
             const pitchBox = document.createElement('div');
@@ -3501,9 +3579,9 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'speak-btn';
-                b.title = '朗读这条';
+                b.title = '用小千的真嗓子读这条';
                 b.textContent = '🔊';
-                b.onclick = (ev) => { ev.stopPropagation(); speakText(text); };
+                b.onclick = (ev) => { ev.stopPropagation(); speakReal(text); };
                 bubbleEl.appendChild(b);
             } catch (e) {}
         }
