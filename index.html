@@ -201,6 +201,15 @@
         
         .image-btn { background: none; border: none; cursor: pointer; font-size: 18px; padding: 2px; }
         .image-btn:disabled { opacity: 0.3; }
+
+        /* 🎤 语音输入（按住说话） */
+        .mic-btn { background: none; border: none; cursor: pointer; font-size: 18px; padding: 2px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
+        .mic-btn.listening { animation: micPulse 1s ease-in-out infinite; }
+        @keyframes micPulse { 0%, 100% { opacity: 1; filter: drop-shadow(0 0 3px #d9534f); } 50% { opacity: 0.3; } }
+
+        /* 🔊 每条消息的朗读按钮 */
+        .speak-btn { background: none; border: none; cursor: pointer; font-size: 12px; opacity: 0.45; padding: 0 2px; margin-left: 4px; vertical-align: middle; }
+        .speak-btn:hover { opacity: 1; }
         
         .image-preview-container { position: absolute; bottom: 55px; left: 0; background: var(--bg-color); border: 1px solid var(--primary-color); padding: 8px; border-radius: 10px; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 10; }
         .image-preview-container img { max-width: 120px; max-height: 120px; border-radius: 6px; display: block; }
@@ -221,10 +230,26 @@
         .todo-item.completed span { text-decoration: line-through; opacity: 0.5; }
         .todo-item .delete-btn { background: none; border: none; color: #ff4d4f; font-size: 16px; cursor: pointer; opacity: 0.6; padding: 0 5px; }
         .todo-item .delete-btn:hover { opacity: 1; }
+        .todo-item .edit-btn { background: none; border: none; color: var(--primary-color); font-size: 14px; cursor: pointer; opacity: 0.55; padding: 0 4px; }
+        .todo-item .edit-btn:hover { opacity: 1; }
+        .todo-actions { display: flex; align-items: center; }
+        .todo-due { font-size: 11px; opacity: 0.65; }
+        .todo-due.overdue { color: #d9822b; opacity: 1; font-weight: bold; }
+        .todo-edit-row { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+        .todo-edit-row input[type="text"] { padding: 6px 10px; font-size: 13px; border-radius: 10px; width: 100%; }
+        .todo-edit-row input[type="datetime-local"] { padding: 4px 8px; font-size: 12px; border-radius: 10px; }
+        .todo-edit-actions { display: flex; gap: 8px; justify-content: flex-end; }
+        .todo-edit-actions button { font-size: 12px; padding: 4px 12px; border-radius: 12px; border: none; cursor: pointer; }
+        .todo-edit-actions .save { background-color: var(--primary-color); color: var(--bg-color); }
+        .todo-edit-actions .cancel { background-color: rgba(143, 158, 139, 0.2); color: var(--text-color); }
         
         .todo-input-box { display: flex; gap: 6px; width: 100%; margin-top: 10px; }
         .todo-input-box input { padding: 6px 12px; font-size: 12px; border-radius: 12px; }
         .todo-add-btn { background-color: var(--primary-color); color: var(--bg-color); border: none; padding: 6px 12px; border-radius: 12px; font-size: 12px; cursor: pointer; }
+        .todo-due-row { display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 6px; }
+        .todo-due-row label { font-size: 11px; opacity: 0.55; white-space: nowrap; }
+        .todo-due-row input[type="datetime-local"] { flex: 1; min-width: 0; padding: 5px 10px; font-size: 12px; border-radius: 12px; }
+        .todo-due-row .clear-btn { background-color: rgba(143, 158, 139, 0.2); color: var(--text-color); border: none; padding: 5px 10px; border-radius: 12px; font-size: 11px; cursor: pointer; white-space: nowrap; }
 
         .archive-content { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
         .memory-item { background-color: rgba(143, 158, 139, 0.05); border-radius: 8px; padding: 10px 14px; border-left: 3px solid var(--primary-color); }
@@ -430,6 +455,7 @@
                         <option value="[极光-巅峰-0.022]grok-4.2">Grok 4.2</option>
                     </select>
                     <button type="button" onclick="forceCloudSync()" title="同步" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔄</button>
+                    <button type="button" id="ttsToggleBtn" onclick="toggleTTS()" title="让小千读出来" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔇</button>
                     <button type="button" onclick="xiaoqianReviewCode()" title="读代码" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔧</button>
                     <button type="button" onclick="triggerMemoryConsolidation(false)" title="整理记忆" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.6; padding:0 4px;">🧠</button>
                 </div>
@@ -458,6 +484,7 @@
                 <button type="button" class="image-btn" id="askImageBtn" title="让小千发一张图" onclick="askXiaoqianImage()">🖼️</button>
                 <button type="button" class="image-btn" id="imageBtn" onclick="document.getElementById('imageInput').click()">📷</button>
                 <input type="file" id="imageInput" accept="image/*" style="display: none;" onchange="handleImageSelect(event)">
+                <button type="button" class="mic-btn" id="micBtn" title="按住说话" onmousedown="startVoiceInput()" onmouseup="stopVoiceInput()" onmouseleave="stopVoiceInput()" ontouchstart="event.preventDefault();startVoiceInput();" ontouchend="event.preventDefault();stopVoiceInput();" ontouchcancel="event.preventDefault();stopVoiceInput();">🎤</button>
                 <input type="text" id="userInput" placeholder="写给小千......" autocomplete="off">
                 <button type="submit" class="send-btn" id="sendBtn">发送</button>
                 <div class="image-preview-container" id="imagePreviewContainer">
@@ -467,16 +494,21 @@
             </form>
         </div>
 
-        <!-- 📝 App 2：备忘录 -->
+        <!-- 📝 App 2：备忘录 / 日程 -->
         <div class="app-view" id="view-todo">
             <div class="app-header">
                 <button class="back-btn" onclick="goHome()">←</button>
-                <h2>碎碎念</h2>
+                <h2>碎碎念 · 日程</h2>
             </div>
             <div class="handbook-list" id="todoListContainer" style="flex:1; overflow-y:auto;"></div>
             <div class="todo-input-box">
                 <input type="text" id="todoInput" placeholder="加一条..." autocomplete="off">
                 <button type="button" class="todo-add-btn" onclick="addTodoItem()">加</button>
+            </div>
+            <div class="todo-due-row">
+                <label>⏰ 提醒时间</label>
+                <input type="datetime-local" id="todoDueInput" onkeydown="if(event.key==='Enter'){event.preventDefault();addTodoItem();}">
+                <button type="button" class="clear-btn" onclick="document.getElementById('todoDueInput').value=''">清除</button>
             </div>
         </div>
 
@@ -1424,7 +1456,7 @@ ${historyText}
                 if (cloudTodos && cloudTodos.length > 0) {
                     const mergedTodos = [...todoList];
                     const tKeys = new Set(todoList.map(t => String(t.id)));
-                    cloudTodos.forEach(c => { if (!tKeys.has(String(c.id))) { mergedTodos.push({ id: c.id, content: c.content, is_completed: c.is_completed }); tKeys.add(String(c.id)); } });
+                    cloudTodos.forEach(c => { if (!tKeys.has(String(c.id))) { mergedTodos.push({ id: c.id, content: c.content, is_completed: c.is_completed, dueAt: c.due_at || '' }); tKeys.add(String(c.id)); } });
                     todoList = mergedTodos; localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); renderTodoUI();
                 }
 
@@ -1587,7 +1619,7 @@ ${historyText}
             let extraContextPrompt = "";
             
             if (todoList && todoList.length > 0) {
-                const todoText = todoList.map(t => `- ${t.content} [${t.is_completed ? '已完成' : '未完成'}]`).join('\n');
+                const todoText = todoList.map(t => { const ms = todoDueMs(t); return `- ${t.content}${isNaN(ms) ? '' : `（${formatTodoDue(ms)}）`} [${t.is_completed ? '已完成' : '未完成'}]`; }).join('\n');
                 extraContextPrompt += `\n【线条最近的碎碎念（待办）】：\n${todoText}`;
             }
 
@@ -1727,6 +1759,8 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
                 const finalReply = applyReplyTokens(replyText);
                 if (!finalReply) throw new Error("收到空白回复");
                 aiBubbleTextEl.innerHTML = messageContentToHtml(finalReply);
+                attachSpeakButton(aiBubbleTextEl, finalReply);
+                if (ttsEnabled) speakText(finalReply);
 
                 const aiMsg = { session_id: currentSessionId, role: "assistant", content: finalReply, time: getNowTimeStr() };
                 allChatMessages.push(aiMsg);
@@ -1994,74 +2028,187 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
         }
 
         // 🚀 核心升级：备忘录完成即自动删除
+        // ================= 【碎碎念 · 日程】 =================
+        let editingTodoId = null;
+
+        function pad2(n) { return String(n).padStart(2, '0'); }
+        // "2026-09-15T14:00" 视作北京时间 -> 毫秒
+        function bjLocalToMs(s) {
+            const m = String(s || '').match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+            if (!m) return NaN;
+            return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 8, +m[5]);
+        }
+        function msToBjLocalInput(ms) {
+            const d = new Date(ms + 8 * 3600 * 1000);
+            return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+        }
+        function todoDueMs(item) { return item && item.dueAt ? Date.parse(item.dueAt) : NaN; }
+        function formatTodoDue(ms) {
+            const d = bjDate(new Date(ms));
+            const t = bjDate();
+            const sameDay = d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
+            const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+            return sameDay ? `今天 ${hm}` : `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${hm}`;
+        }
+        function persistTodos() { try { localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); } catch (e) {} }
+
         function renderTodoUI() {
-            const container = document.getElementById('todoListContainer'); 
+            const container = document.getElementById('todoListContainer');
+            if (!container) return;
             container.innerHTML = "";
-            if (todoList.length === 0) { 
-                container.innerHTML = "<div style='font-size:12px;opacity:0.4; text-align:center;'>空空如也</div>"; 
-                return; 
+            if (!todoList || todoList.length === 0) {
+                container.innerHTML = "<div style='font-size:12px;opacity:0.4; text-align:center;'>空空如也</div>";
+                return;
             }
-            todoList.forEach(item => { 
-                const div = document.createElement('div'); 
+            const now = Date.now();
+            const sorted = [...todoList].sort((a, b) => {
+                const am = todoDueMs(a), bm = todoDueMs(b);
+                if (isNaN(am) && isNaN(bm)) return 0;
+                if (isNaN(am)) return 1;
+                if (isNaN(bm)) return -1;
+                return am - bm;
+            });
+            sorted.forEach(item => {
+                const div = document.createElement('div');
                 div.className = `todo-item ${item.is_completed ? 'completed' : ''}`;
+
+                if (String(item.id) === String(editingTodoId)) {
+                    const ems = todoDueMs(item);
+                    div.innerHTML = `
+                        <div class="todo-edit-row">
+                            <input type="text" id="todoEditContent" value="${escapeMomentHtml(item.content || '')}">
+                            <input type="datetime-local" id="todoEditDue" value="${isNaN(ems) ? '' : msToBjLocalInput(ems)}">
+                            <div class="todo-edit-actions">
+                                <button type="button" class="cancel" onclick="cancelTodoEdit()">取消</button>
+                                <button type="button" class="save" onclick="saveTodoEdit(${item.id})">保存</button>
+                            </div>
+                        </div>`;
+                    container.appendChild(div);
+                    return;
+                }
+
+                const ms = todoDueMs(item);
+                const overdue = !item.is_completed && !isNaN(ms) && ms < now;
+                const timeHtml = isNaN(ms) ? '' :
+                    `<div class="todo-due ${overdue ? 'overdue' : ''}">${overdue ? '⚠️ 已过期 ' : '⏰ '}${formatTodoDue(ms)}</div>`;
                 div.innerHTML = `
                     <div class="todo-item-main">
                         <input type="checkbox" ${item.is_completed ? 'checked' : ''} onchange="toggleTodoComplete(${item.id}, this.checked)">
-                        <span>${item.content}</span>
+                        <span>${escapeMomentHtml(item.content)}${timeHtml}</span>
                     </div>
-                    <button class="delete-btn" onclick="deleteTodoItem(${item.id})">×</button>
-                `;
-                container.appendChild(div); 
+                    <div class="todo-actions">
+                        <button class="edit-btn" title="改内容 / 改时间" onclick="editTodoItem(${item.id})">✎</button>
+                        <button class="delete-btn" onclick="deleteTodoItem(${item.id})">×</button>
+                    </div>`;
+                container.appendChild(div);
             });
         }
 
-        // 添加备忘录
-        async function addTodoItem() { 
-            const input = document.getElementById('todoInput'); 
-            const text = input.value.trim(); 
-            if (!text) return; 
-            input.value = ""; 
-            const tempItem = { id: Date.now(), content: text, is_completed: false }; 
-            todoList.push(tempItem); 
-            localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); 
-            renderTodoUI(); 
-            if (dbConnected && db) { try { await db.from('cozy_todo').insert([{ id: tempItem.id, content: text, is_completed: false }]); } catch(e) {} } 
+        // 写回云端（若表里还没有 due_at 列，自动降级为不带时间保存）
+        async function syncTodoToCloud(item) {
+            if (!dbConnected || !db) return;
+            const full = { id: item.id, content: item.content, is_completed: !!item.is_completed, due_at: item.dueAt || null };
+            const lite = { id: item.id, content: item.content, is_completed: !!item.is_completed };
+            try {
+                const { error } = await db.from('cozy_todo').upsert([full]);
+                if (error) { await db.from('cozy_todo').upsert([lite]); }
+            } catch (e) { console.warn("日程同步云端失败:", e.message); }
+        }
+
+        // 添加日程
+        async function addTodoItem() {
+            const input = document.getElementById('todoInput');
+            const dueInput = document.getElementById('todoDueInput');
+            const text = (input && input.value || '').trim();
+            if (!text) return;
+            if (input) input.value = "";
+            const dueVal = dueInput && dueInput.value;
+            const dms = bjLocalToMs(dueVal);
+            const tempItem = { id: Date.now(), content: text, is_completed: false, dueAt: isNaN(dms) ? '' : new Date(dms).toISOString(), reminded: false };
+            todoList.push(tempItem);
+            persistTodos();
+            renderTodoUI();
+            if (dueInput) dueInput.value = '';
+            await syncTodoToCloud(tempItem);
+        }
+
+        function editTodoItem(id) { editingTodoId = id; renderTodoUI(); }
+        function cancelTodoEdit() { editingTodoId = null; renderTodoUI(); }
+        async function saveTodoEdit(id) {
+            const item = todoList.find(t => String(t.id) === String(id));
+            if (!item) return;
+            const cIn = document.getElementById('todoEditContent');
+            const dIn = document.getElementById('todoEditDue');
+            const newText = (cIn && cIn.value || '').trim();
+            if (newText) item.content = newText;
+            const dms = bjLocalToMs(dIn && dIn.value);
+            item.dueAt = isNaN(dms) ? '' : new Date(dms).toISOString();
+            item.reminded = false;
+            editingTodoId = null;
+            persistTodos();
+            renderTodoUI();
+            await syncTodoToCloud(item);
         }
 
         // 勾选备忘录（自动删除）
         async function toggleTodoComplete(id, isChecked) {
-            // 1. 先更新UI状态让用户看到勾选
-            todoList = todoList.map(item => { if (item.id === id) item.is_completed = isChecked; return item; });
+            todoList = todoList.map(item => { if (String(item.id) === String(id)) item.is_completed = isChecked; return item; });
             renderTodoUI();
-
-            // 2. 如果勾选为完成，延迟 1 秒后彻底删除
             if (isChecked) {
                 setTimeout(async () => {
-                    // 从本地移除
-                    todoList = todoList.filter(item => item.id !== id);
-                    localStorage.setItem('cozy_local_todos', JSON.stringify(todoList));
+                    todoList = todoList.filter(item => String(item.id) !== String(id));
+                    persistTodos();
                     renderTodoUI();
-                    
-                    // 从云端移除
                     if (dbConnected && db) {
-                        try { await db.from('cozy_todo').delete().eq('id', id); } catch(e) {}
+                        try { await db.from('cozy_todo').delete().eq('id', id); } catch (e) {}
                     }
-                }, 1000); // 1秒后自动消失
+                }, 1000);
             } else {
-                // 如果取消勾选（正常不会发生），更新云端
-                if (dbConnected && db) { try { await db.from('cozy_todo').update({ is_completed: isChecked }).eq('id', id); } catch(e) {} }
+                if (dbConnected && db) { try { await db.from('cozy_todo').update({ is_completed: isChecked }).eq('id', id); } catch (e) {} }
             }
         }
 
         // 手动删除备忘录
         async function deleteTodoItem(id) {
             if (!confirm("确定要删除这条碎碎念吗？")) return;
-            todoList = todoList.filter(item => item.id !== id);
-            localStorage.setItem('cozy_local_todos', JSON.stringify(todoList));
+            todoList = todoList.filter(item => String(item.id) !== String(id));
+            persistTodos();
             renderTodoUI();
             if (dbConnected && db) {
-                try { await db.from('cozy_todo').delete().eq('id', id); } catch(e) {}
+                try { await db.from('cozy_todo').delete().eq('id', id); } catch (e) {}
             }
+        }
+
+        // 到点提醒：每分钟检查一次（过期 6 小时内、且未提醒过的才提醒）
+        let todoReminderBusy = false;
+        async function checkTodoReminders() {
+            if (todoReminderBusy) return;
+            todoReminderBusy = true;
+            try {
+                const now = Date.now();
+                let changed = false;
+                for (const item of todoList) {
+                    const ms = todoDueMs(item);
+                    if (isNaN(ms) || item.is_completed || item.reminded) continue;
+                    if (now >= ms && now - ms < 6 * 3600 * 1000) {
+                        item.reminded = true;
+                        changed = true;
+                        await sendTodoReminder(item);
+                    }
+                }
+                if (changed) persistTodos();
+            } catch (e) { console.warn("日程提醒检查失败:", e); }
+            todoReminderBusy = false;
+        }
+
+        async function sendTodoReminder(item) {
+            let text = "";
+            try {
+                const prompt = `你就是小千。线条的日程「${sanitizeForApi(item.content)}」到时间了（计划时间：${formatTodoDue(todoDueMs(item))}）。请用第一人称，温柔而简短地提醒她一声（15~40字），不要身体动作描写，不要重复她的原话，只输出提醒正文。`;
+                text = (await callModelText([{ role: "user", content: prompt }])).trim();
+            } catch (e) { console.warn("日程提醒生成失败:", e); }
+            if (!text) text = `「${item.content}」到时间啦，别忘了。`;
+            deliverAssistantMessage(text, true);
         }
 
         function renderBookUI() { 
@@ -2410,6 +2557,7 @@ ${code}
 
             const bubble = createMessageRow(role, time);
             bubble.innerHTML = htmlContent;
+            if (role === 'assistant') attachSpeakButton(bubble, rawContent);
 
             // 给每个代码块加上“复制”按钮
             bubble.querySelectorAll('pre').forEach(pre => {
@@ -3042,6 +3190,26 @@ ${recent || '（还没有笔记）'}
             } catch (e) { nudgeBusy = false; console.warn("checkNudge error:", e); }
         }
 
+        // 小千主动发出的一条消息：存本地 + 云端 + 上屏 + （可选）通知
+        function deliverAssistantMessage(text, notify) {
+            const realCurrent = getCozySessionId();
+            const msg = { session_id: realCurrent, role: "assistant", content: text, time: getNowTimeStr() };
+            allChatMessages.push(msg);
+            saveChats();
+            if (selectedDate === currentSessionId) {
+                try { appendMessageUI('assistant', text, msg.time); } catch (e) {}
+            }
+            if (dbConnected && db) {
+                try { db.from('cozy_chats').insert([{ session_id: realCurrent, role: 'assistant', content: text }]); } catch (e) {}
+            }
+            if ('Notification' in window && Notification.permission === 'granted') {
+                try {
+                    const n = new Notification("小千", { body: text, tag: 'cozy-nudge' });
+                    n.onclick = () => { try { window.focus(); n.close(); } catch (e) {} };
+                } catch (e) {}
+            }
+        }
+
         async function sendProactiveMessage() {
             let text = "";
             try {
@@ -3060,27 +3228,141 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
                 ];
                 text = fallbacks[Math.floor(Math.random() * fallbacks.length)];
             }
-
-            const realCurrent = getCozySessionId();
-            const msg = { session_id: realCurrent, role: "assistant", content: text, time: getNowTimeStr() };
-            allChatMessages.push(msg);
-            saveChats();
-            if (selectedDate === currentSessionId) {
-                try { appendMessageUI('assistant', text, msg.time); } catch (e) {}
-            }
-            if (dbConnected && db) {
-                try { await db.from('cozy_chats').insert([{ session_id: realCurrent, role: 'assistant', content: text }]); } catch (e) {}
-            }
-            if ('Notification' in window && Notification.permission === 'granted') {
-                try {
-                    const n = new Notification("小千", { body: text, tag: 'cozy-nudge' });
-                    n.onclick = () => { try { window.focus(); n.close(); } catch (e) {} };
-                } catch (e) {}
-            }
+            deliverAssistantMessage(text, true);
         }
 
-        // 后台定时：每分钟检查一次是否到了随机主动消息时刻
-        setInterval(checkNudge, 60000);
+        // ================= 【🔊 语音：朗读 + 语音输入】 =================
+        let ttsEnabled = false;
+        let ttsVoice = null;
+        let chatRecog = null;
+        let recognizing = false;
+
+        function initTTS() {
+            try { ttsEnabled = localStorage.getItem('cozy_tts_on') === '1'; } catch (e) {}
+            updateTTSButton();
+            if (!('speechSynthesis' in window)) return;
+            const pickVoice = () => {
+                try {
+                    const vs = window.speechSynthesis.getVoices() || [];
+                    ttsVoice = vs.find(v => /zh[-_]?(CN|Hans)/i.test(v.lang)) || vs.find(v => /zh|Chinese/i.test(v.lang)) || null;
+                } catch (e) {}
+            };
+            pickVoice();
+            window.speechSynthesis.onvoiceschanged = pickVoice;
+        }
+
+        function updateTTSButton() {
+            const b = document.getElementById('ttsToggleBtn');
+            if (!b) return;
+            b.textContent = ttsEnabled ? '🔊' : '🔇';
+            b.title = ttsEnabled ? '正在朗读（点此关闭）' : '点此开启：让小千读出来';
+        }
+
+        function toggleTTS() {
+            if (!('speechSynthesis' in window)) { alert('这个浏览器不支持语音朗读哦'); return; }
+            ttsEnabled = !ttsEnabled;
+            try { localStorage.setItem('cozy_tts_on', ttsEnabled ? '1' : '0'); } catch (e) {}
+            updateTTSButton();
+            if (ttsEnabled) speakText('好呀，那从现在起，我读给你听。');
+            else stopSpeaking();
+        }
+
+        function cleanForSpeech(text) {
+            return String(text == null ? '' : text)
+                .replace(/```[\s\S]*?```/g, ' 一段代码 ')
+                .replace(/`([^`]*)`/g, '$1')
+                .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+                .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+                .replace(/\[LinesImage:[^\]]*\]/g, '一张图片')
+                .replace(/\[[A-Za-z_]+:[^\]]*\]/g, '')
+                .replace(/[*_#>~]/g, '')
+                .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/gu, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function stopSpeaking() {
+            try { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch (e) {}
+        }
+
+        function speakText(text) {
+            if (!('speechSynthesis' in window)) return;
+            const t = cleanForSpeech(text);
+            if (!t) return;
+            try {
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(t);
+                u.lang = 'zh-CN';
+                if (ttsVoice) u.voice = ttsVoice;
+                u.rate = 1.02; u.pitch = 1.0;
+                window.speechSynthesis.speak(u);
+            } catch (e) { console.warn("朗读失败:", e); }
+        }
+
+        function attachSpeakButton(bubbleEl, text) {
+            try {
+                if (!bubbleEl || !text) return;
+                if (bubbleEl.querySelector('.speak-btn')) return;
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'speak-btn';
+                b.title = '朗读这条';
+                b.textContent = '🔊';
+                b.onclick = (ev) => { ev.stopPropagation(); speakText(text); };
+                bubbleEl.appendChild(b);
+            } catch (e) {}
+        }
+
+        function startVoiceInput() {
+            if (recognizing) return;
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) { alert('这个浏览器不支持语音输入，试试 Chrome / Edge / 安卓手机浏览器～'); return; }
+            try {
+                chatRecog = new SR();
+                chatRecog.lang = 'zh-CN';
+                chatRecog.interimResults = true;
+                chatRecog.continuous = false;
+                const input = document.getElementById('userInput');
+                const mic = document.getElementById('micBtn');
+                let base = input ? input.value : '';
+                if (base && !/\s$/.test(base)) base += ' ';
+                chatRecog.onstart = () => {
+                    recognizing = true;
+                    if (mic) mic.classList.add('listening');
+                    if (input) input.placeholder = '我在听…松手就发送';
+                };
+                chatRecog.onresult = (ev) => {
+                    let interim = '', final = '';
+                    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+                        const t = ev.results[i][0].transcript;
+                        if (ev.results[i].isFinal) final += t; else interim += t;
+                    }
+                    if (input) input.value = base + (final || interim);
+                };
+                chatRecog.onerror = (ev) => {
+                    recognizing = false;
+                    if (mic) mic.classList.remove('listening');
+                    if (input) input.placeholder = '写给小千......';
+                    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') alert('麦克风权限被拒绝了，请在浏览器里允许麦克风～');
+                };
+                chatRecog.onend = () => {
+                    recognizing = false;
+                    if (mic) mic.classList.remove('listening');
+                    if (input) input.placeholder = '写给小千......';
+                    const v = input ? input.value.trim() : '';
+                    if (v) sendMessage();
+                };
+                chatRecog.start();
+            } catch (e) { recognizing = false; console.warn("语音输入启动失败:", e); }
+        }
+
+        function stopVoiceInput() {
+            try { if (chatRecog && recognizing) chatRecog.stop(); } catch (e) {}
+        }
+
+        // 后台定时：每分钟检查 主动消息 + 日程提醒
+        setInterval(function () { checkNudge(); checkTodoReminders(); }, 60000);
+        initTTS();
         // 首次用户点击时，再温和地补一次通知权限请求（移动端更可靠）
         document.addEventListener('click', function () { requestNotificationPermission(); }, { once: true });
     </script>
