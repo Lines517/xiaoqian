@@ -538,6 +538,7 @@
             <div class="app-header">
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>庇护所记忆</h2>
+                <button type="button" onclick="extractFactsForDay(currentSessionId)" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🧩 整理今天的事实</button>
             </div>
             <div class="archive-content" id="archiveContent"></div>
         </div>
@@ -578,6 +579,7 @@
         let currentSongTitle = "";
         let readingNotes = [];
         let currentBook = null;
+        let factsDb = [];
         let avatarXiaoqian = "";
         let avatarUser = "";
         try { avatarXiaoqian = localStorage.getItem('cozy_avatar_xiaoqian') || ""; } catch (e) {}
@@ -801,6 +803,7 @@
                     await loadMoments();
                     await loadPlaylist();
                     await loadReadingNotes();
+                    await loadFacts();
                     await ensureCloudSessionVisible();
                     setTimeout(checkAutoMemory, 3000); 
                 }
@@ -1033,6 +1036,88 @@
             const local = localStorage.getItem('cozy_local_memories');
             if (local) { try { memoryDb = JSON.parse(local); } catch(e) { memoryDb = []; } }
             renderMemoryUI();
+        }
+
+        // ================= 【记忆库 · 事实碎片】 =================
+        async function loadFacts() {
+            if (!dbConnected || !db) return;
+            try {
+                const { data } = await db.from('cozy_facts').select('*').order('created_at', { ascending: false }).limit(800);
+                factsDb = data || [];
+                renderMemoryUI();
+            } catch (e) { console.warn("加载事实碎片失败（表可能尚未创建）:", e.message); }
+        }
+
+        // 按关键词从事实库里挑出与当前对话最相关的几条
+        function retrieveRelevantFacts(queryText, limit = 6) {
+            if (!factsDb || factsDb.length === 0) return [];
+            const q = String(queryText || '').toLowerCase();
+            const scored = [];
+            for (const f of factsDb) {
+                let score = 0;
+                const kws = String(f.keywords || '').toLowerCase().split(/[,，、\s]+/).filter(Boolean);
+                for (const k of kws) { if (k.length >= 2 && q.includes(k)) score += 2; }
+                const subj = String(f.subject || '').toLowerCase();
+                if (subj && subj.length >= 2 && q.includes(subj)) score += 2;
+                if (score > 0) scored.push({ f, score });
+            }
+            scored.sort((a, b) => b.score - a.score);
+            if (scored.length === 0) return factsDb.slice(0, Math.min(limit, 4)); // 没命中就给最近几条兜底
+            return scored.slice(0, limit).map(x => x.f);
+        }
+
+        // 从某一天的聊天里抽取"事实碎片"，写入 cozy_facts（每天只抽一次）
+        async function extractFactsForDay(dayId) {
+            if (!dbConnected || !db || !dayId) return;
+            const guardKey = `cozy_facts_extracted_${dayId}`;
+            if (localStorage.getItem(guardKey)) return;
+            const dayChats = allChatMessages.filter(m => m.session_id === dayId);
+            if (dayChats.length < 2) return;
+
+            let historyText = dayChats.map(m => `${m.role === 'user' ? '线条' : '小千'}：${sanitizeForApi(m.content)}`).join('\n');
+            if (historyText.length > 20000) historyText = historyText.slice(-20000);
+
+            const factPrompt = `请从下面这段「小千」和「线条」的聊天记录里，抽取对长期陪伴有用的事实碎片。
+每条事实是一个第三人称短句（不超过 40 字），描述关于线条（或你们之间）的人、地点、事件、兴趣、偏好、重要承诺。
+忽略寒暄、临时情绪和无关内容。宁缺毋滥，最多 12 条。
+
+聊天记录：
+======================
+${historyText}
+======================
+
+你必须只返回标准 JSON 数组，不要任何解释或 markdown 标记，格式严格为：
+[{"category":"人物/地点/事件/兴趣/偏好/其他","subject":"主体（如 线条/杭州/拼拼豆）","fact":"事实短句","keywords":"逗号分隔的关键词"}]`;
+
+            try {
+                const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: factPrompt }] }) });
+                const resData = await response.json();
+                if (resData.error) throw new Error(resData.error.message);
+                const raw = resData.choices[0].message.content.trim();
+                let arr = null;
+                try {
+                    const cleaned = raw.replace(/```json/g, '').replace(/```/g, '');
+                    const m = cleaned.match(/\[[\s\S]*\]/);
+                    if (m) arr = JSON.parse(m[0]);
+                } catch (e) { arr = null; }
+                if (Array.isArray(arr)) {
+                    for (const f of arr) {
+                        if (!f || !f.fact) continue;
+                        try {
+                            await db.from('cozy_facts').insert([{
+                                fact_date: dayId,
+                                category: f.category || '',
+                                subject: f.subject || '',
+                                fact: String(f.fact).slice(0, 120),
+                                keywords: f.keywords || ''
+                            }]);
+                        } catch (e) { console.warn("写入事实失败:", e.message); }
+                    }
+                    localStorage.setItem(guardKey, "done");
+                    console.log(`🧩 已为 ${dayId} 抽取 ${arr.length} 条事实碎片`);
+                    await loadFacts();
+                }
+            } catch (e) { console.warn("抽取事实碎片失败:", e); }
         }
 
         // ================= 【3. 云端同步：永久备份与旧数据修复】 =================
@@ -1304,9 +1389,20 @@
 
             let memoryPrompt = "";
             if (memoryDb.length > 0) {
-                const recentMemories = memoryDb.slice(0, 15).map(m => `[${m.date}] ${m.memory}`).join('\n'); // 增加到近15天
+                const recentMemories = memoryDb.slice(0, 15).map(m => `[${m.date}] ${m.memory}`).join('\n');
                 memoryPrompt = `\n【你们的近期记忆（请务必牢记这些细节，并在合适的时候自然提起）】：\n${recentMemories}`;
             }
+
+            // 🧩 事实碎片检索：根据当前这句话 + 最近对话，挑出相关的长期事实
+            let factsPrompt = "";
+            try {
+                const recentText = contextChats.slice(-8).map(m => sanitizeForApi(m.content)).join(' ');
+                const relevantFacts = retrieveRelevantFacts((text + ' ' + recentText).toLowerCase(), 6);
+                if (relevantFacts.length > 0) {
+                    const factLines = relevantFacts.map(f => `- [${f.category || '记忆'}] ${f.fact}`).join('\n');
+                    factsPrompt = `\n【相关记忆碎片（长期事实，若与话题相关可自然提起，不要生硬罗列）】：\n${factLines}`;
+                }
+            } catch (e) {}
 
             const now = new Date();
             const timeStr = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', weekday: 'long' });
@@ -1323,7 +1419,7 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
 【你们的长期相处细节（来自记忆库）】：
 - 名字：她叫“线条”，名字来源于王小波的《似水流年》。
 - 现实：她明天下午13:44坐高铁回杭州，讨厌寝室里凌晨4点起来不睡觉低效内卷的室友，习惯拉上床帘拼拼豆、玩金铲铲。
-- 台灯：这个燕麦色背景、深森林绿字体的像素台灯页面，是你们俩一砖一瓦搭建的床帘专属避难所。${memoryPrompt}${extraContextPrompt}
+- 台灯：这个燕麦色背景、深森林绿字体的像素台灯页面，是你们俩一砖一瓦搭建的床帘专属避难所。${memoryPrompt}${factsPrompt}${extraContextPrompt}
 
 【代码输出规则】：如果线条让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
 【主动配图规则】：当线条说想看图片、想看图、让你发张图，或当下意境特别适合一幅画面时，请务必在回复里单独一行输出 [SHOW_IMAGE: 英文图片关键词]（2~3个英文词，逗号分隔，例如 [SHOW_IMAGE: moon, forest]）。系统会自动为你配上一张对应的图片，你只需在图片配一句简短的话即可。
@@ -1589,7 +1685,45 @@ ${formattedHistoryText}
         function renderMemoryUI() {
             const container = document.getElementById('archiveContent');
             container.innerHTML = "";
-            if (memoryDb.length === 0) { container.innerHTML = "<div style='font-size:12px;opacity:0.4; text-align:center;'>还没有整理过任何记忆...</div>"; return; }
+
+            // 🧩 事实碎片区
+            const factTitle = document.createElement('div');
+            factTitle.style.cssText = "font-size:12px;font-weight:bold;opacity:0.7;margin-bottom:4px;";
+            factTitle.innerText = `🧩 记忆碎片（长期事实 · ${factsDb ? factsDb.length : 0} 条）`;
+            container.appendChild(factTitle);
+
+            if (!factsDb || factsDb.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.cssText = "font-size:11.5px;opacity:0.4;margin-bottom:14px;";
+                empty.innerText = "还没有抽取事实碎片，点上方『整理今天的事实』试试～";
+                container.appendChild(empty);
+            } else {
+                const wrap = document.createElement('div');
+                wrap.className = "handbook-list";
+                wrap.style.marginBottom = "16px";
+                factsDb.slice(0, 80).forEach(f => {
+                    const d = document.createElement('div');
+                    d.className = "memory-item";
+                    d.innerHTML = `<div><strong>[${f.category || '记忆'}]</strong> ${escapeMomentHtml(f.fact)}</div>` +
+                        (f.fact_date ? `<div style="font-size:10.5px;opacity:0.45;margin-top:3px;">📅 ${escapeMomentHtml(f.fact_date)}</div>` : '');
+                    wrap.appendChild(d);
+                });
+                container.appendChild(wrap);
+            }
+
+            // 📅 每日记忆区
+            const memTitle = document.createElement('div');
+            memTitle.style.cssText = "font-size:12px;font-weight:bold;opacity:0.7;margin-bottom:4px;";
+            memTitle.innerText = `📅 每日记忆（${memoryDb.length} 天）`;
+            container.appendChild(memTitle);
+
+            if (memoryDb.length === 0) {
+                const empty2 = document.createElement('div');
+                empty2.style.cssText = "font-size:11.5px;opacity:0.4;";
+                empty2.innerText = "还没有整理过每日记忆...";
+                container.appendChild(empty2);
+                return;
+            }
             memoryDb.forEach(item => {
                 const div = document.createElement('div'); div.className = "memory-item";
                 let folderLabel = item.folder || (item.date ? `${item.date} 手记` : '未知时间');
@@ -2134,6 +2268,7 @@ ${formattedHistoryText}
                 if (lastOpen && lastOpen !== todayId) {
                     console.log(`🌅 检测到跨天：上次打开于 ${lastOpen}，正在静默整理……`);
                     await silentExtractMemoryForDay(lastOpen);
+                    await extractFactsForDay(lastOpen); // 同时抽取事实碎片
                 }
                 localStorage.setItem('cozy_last_open_date', todayId);
             } catch (e) { console.warn("autoConsolidatePreviousDay error:", e); }

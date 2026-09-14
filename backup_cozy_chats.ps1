@@ -168,6 +168,68 @@ $historyText
     Write-Log ("生成庇护所记忆失败: {0}" -f $_.Exception.Message)
 }
 
+# ---------- 抽取"昨天的事实碎片"（若尚未抽取）----------
+try {
+    $utcNow2 = (Get-Date).ToUniversalTime()
+    $todaySid2 = Get-CozySessionId $utcNow2
+    $prevSid2 = ([datetime]::ParseExact($todaySid2, 'yyyy-MM-dd', $null)).AddDays(-1).ToString('yyyy-MM-dd')
+
+    $factCheck = "$SUPABASE_URL/rest/v1/cozy_facts?fact_date=eq.$prevSid2&select=id&limit=1"
+    $factExist = (Invoke-WebRequest -Uri $factCheck -Headers $headers -UseBasicParsing -TimeoutSec 30).Content | ConvertFrom-Json
+    if (@($factExist).Count -eq 0) {
+        $dayChats2 = @($chats | Where-Object { $_.session_id -eq $prevSid2 })
+        if ($dayChats2.Count -ge 2) {
+            $lines2 = foreach ($m in ($dayChats2 | Sort-Object created_at)) {
+                $who = if ($m.role -eq 'user') { '线条' } else { '小千' }
+                $c = [string]$m.content
+                $c = $c -replace '\[LinesImage:[^\]]*\]', '[图片]'
+                $c = $c -replace '\[SHOW_IMAGE:[^\]]*\]', ''
+                "$who：$c"
+            }
+            $ht2 = ($lines2 -join "`n")
+            if ($ht2.Length -gt 20000) { $ht2 = $ht2.Substring($ht2.Length - 20000) }
+
+            $fp = @"
+请从下面这段「小千」和「线条」的聊天记录里，抽取对长期陪伴有用的事实碎片。
+每条事实是一个第三人称短句（不超过40字），描述关于线条（或你们之间）的人、地点、事件、兴趣、偏好、重要承诺。
+忽略寒暄、临时情绪和无关内容。宁缺毋滥，最多12条。
+聊天记录：
+======================
+$ht2
+======================
+你必须只返回标准 JSON 数组，不要任何解释或 markdown 标记，格式严格为：
+[{"category":"人物/地点/事件/兴趣/偏好/其他","subject":"主体","fact":"事实短句","keywords":"逗号分隔的关键词"}]
+"@
+            $bodyJson2 = (@{ model = $API_MODEL; messages = @(@{ role = "user"; content = $fp }) }) | ConvertTo-Json -Depth 6
+            $resp2 = Invoke-RestMethod -Uri $API_URL -Method Post -Headers @{ Authorization = "Bearer $API_KEY"; "Content-Type" = "application/json" } -Body $bodyJson2 -TimeoutSec 120
+            $raw2 = [string]$resp2.choices[0].message.content
+            $fa = $null
+            try {
+                $cleaned2 = $raw2 -replace '```json', '' -replace '```', ''
+                $mm2 = [regex]::Match($cleaned2, '\[[\s\S]*\]')
+                if ($mm2.Success) { $fa = $mm2.Value | ConvertFrom-Json }
+            } catch { $fa = $null }
+            $cnt = 0
+            foreach ($f in @($fa)) {
+                if ($f -and $f.fact) {
+                    $row = @{ fact_date = $prevSid2; category = [string]$f.category; subject = [string]$f.subject; fact = [string]$f.fact; keywords = [string]$f.keywords } | ConvertTo-Json
+                    try {
+                        Invoke-WebRequest -Uri "$SUPABASE_URL/rest/v1/cozy_facts" -Method Post -Headers $jsonPost -Body $row -UseBasicParsing -TimeoutSec 30 | Out-Null
+                        $cnt++
+                    } catch {}
+                }
+            }
+            Write-Log ("{0} 的事实碎片已抽取：{1} 条" -f $prevSid2, $cnt)
+        } else {
+            Write-Log ("{0} 记录不足，跳过事实抽取" -f $prevSid2)
+        }
+    } else {
+        Write-Log ("{0} 已有事实碎片，跳过" -f $prevSid2)
+    }
+} catch {
+    Write-Log ("抽取事实碎片失败: {0}" -f $_.Exception.Message)
+}
+
 # ---------- 导出庇护所记忆为文件夹（一天一个 txt）----------
 try {
     $memUri = "$SUPABASE_URL/rest/v1/cozy_memories?select=*&order=memory_date.asc"
