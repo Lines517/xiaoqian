@@ -715,6 +715,50 @@
             });
         }
 
+        // 🔗 链接阅读：消息里出现网址时交给总机（服务端）抓取（前端拿不到跨域网页）
+        const LINK_URL_RE = /https?:\/\/[^\s<>"'）)】\]]+/gi;
+        function extractUrls(text) {
+            const m = String(text || '').match(LINK_URL_RE) || [];
+            const uniq = [];
+            for (const u of m) {
+                const clean = u.replace(/[.,;:!?，。；：！？、]+$/, '');
+                if (clean && !uniq.includes(clean)) uniq.push(clean);
+                if (uniq.length >= 2) break;
+            }
+            return uniq;
+        }
+        async function fetchLinkContent(url) {
+            if (!EDGE_FN_URL) return null;
+            const r = await fetch(EDGE_FN_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}`, 'apikey': SUPABASE_KEY },
+                body: JSON.stringify({ action: 'readUrl', url: url })
+            });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return await r.json();
+        }
+        async function readLinksInText(text) {
+            const urls = extractUrls(text);
+            if (urls.length === 0) return "";
+            let out = "";
+            for (const u of urls) {
+                try {
+                    const j = await fetchLinkContent(u);
+                    if (j && j.ok && !j.blocked && (j.text || j.description || j.title)) {
+                        const caution = j.suspectSpa ? '（注意：这类站点的正文常由脚本渲染，如果下面内容看起来只是导航/页脚而非正文，就说明没抓到，请她截图。）\n' : '';
+                        out += `\n【线条发来的链接：${u}】\n（这是系统抓取的网页内容，可能不完整）\n${caution}标题：${j.title || '（无）'}\n摘要：${j.description || '（无）'}\n正文摘录：${(j.text || '').slice(0, 3500) || '（无）'}\n`;
+                    } else if (j && j.ok && j.blocked) {
+                        out += `\n【线条发来的链接：${u}】\n（这个页面需要登录或有反爬，系统打不开——比如小红书。请让她直接截图发给你。）\n`;
+                    } else {
+                        out += `\n【线条发来的链接：${u}】\n（打不开：${(j && j.reason) || '未知原因'}。请让她截图，或把关键内容贴给你。）\n`;
+                    }
+                } catch (e) {
+                    out += `\n【线条发来的链接：${u}】\n（读取失败：${e.message}。请让她截图，或把关键内容贴给你。）\n`;
+                }
+            }
+            return out;
+        }
+
         // 统一的流式请求：优先走 Supabase Edge Function（若已配置），否则直连模型接口
         async function openModelStream(completeMessages) {
             const payload = { model: API_MODEL, messages: completeMessages, stream: true };
@@ -737,8 +781,7 @@
         }
 
         // 统一的"取文本"调用：走流式通道，把整段回复拼好返回（用于识图、总结、评论等）
-        async function callModelText(messages) {
-            const resp = await openModelStream(messages);
+        async function callModelText(messages) {            const resp = await openModelStream(messages);
             if (!resp || !resp.ok || !resp.body) {
                 let msg = "接口出错";
                 try { const j = await resp.json(); msg = (j.error && (j.error.message || j.error)) || msg; } catch (e) {}
@@ -1717,7 +1760,19 @@ Always keep an extremely gentle, mature and equal tone.
 【页面技术背景（供读代码时参考）】：这个页面是一个单文件网页应用（index.html，托管在 GitHub 的 Lines517/xiaoqian，用 Supabase 做云端数据库）。页面里的 App 有：灯下闲谈(聊天)、碎碎念(日程)、一起读书(共读)、一起听歌、朋友圈、庇护所记忆。数据表有 cozy_chats/cozy_memories/cozy_facts/cozy_moments/cozy_reading_notes/cozy_playlist。当对方让你看代码或提修改建议时，请给出具体、可执行、按优先级排序的建议。
 【主动配图规则】：当对方说想看图片、想看图、让你发张图，或当下意境特别适合一幅画面时，请务必在回复里单独一行输出 [SHOW_IMAGE: 英文图片关键词]（2~3个英文词，逗号分隔，例如 [SHOW_IMAGE: moon, forest]）。系统会自动为你配上一张对应的图片，你只需在图片旁配一句简短的话即可。
 【读图规则】：对方发来图片时，你会先看到对图片的文字转述（可能包含图中文字）。请基于这些内容自然地回应；如果图里有文字，可以提到你看到了什么字。
-【更换头像规则】：当对方说想让你换头像，或你此刻很想换一个更贴合心境的头像时，可以单独一行写 [SET_AVATAR: 英文关键词]（例如 [SET_AVATAR: starry, night]），系统会自动在网上为你找一张新头像换上。`;
+【更换头像规则】：当对方说想让你换头像，或你此刻很想换一个更贴合心境的头像时，可以单独一行写 [SET_AVATAR: 英文关键词]（例如 [SET_AVATAR: starry, night]），系统会自动在网上为你找一张新头像换上。
+【链接阅读规则】：如果消息里出现【线条发来的链接：…】这一段，那是系统替你打开网页后抓到的内容，请基于它自然回应；如果里面写着"打不开/需要登录/有反爬"，就诚实地告诉她你打不开这篇，请她截图或把关键内容贴给你，不要假装看过。`;
+
+            // 🔗 消息里有网址就先让总机读一读，把结果附在本轮消息后面
+            try {
+                const linkCtx = await readLinksInText(text);
+                if (linkCtx) {
+                    appendSystemMessage("🔗 正在读取你发的链接…");
+                    const lastMsg = apiMessages[apiMessages.length - 1];
+                    if (lastMsg && lastMsg.role === 'user') lastMsg.content += '\n\n' + linkCtx;
+                    else apiMessages.push({ role: 'user', content: linkCtx });
+                }
+            } catch (e) { console.warn('链接读取失败:', e); }
 
             // 构建完整的请求体消息队列，加入系统设定
             const completeMessages = [{ role: "system", content: systemPrompt }, ...apiMessages];
