@@ -543,7 +543,7 @@
             <div class="app-header">
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>庇护所记忆</h2>
-                <button type="button" onclick="mergeAllMemories()" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🧹 合并重复</button>
+                <button type="button" onclick="organizeAllMemories()" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🪄 整理重复</button>
                 <button type="button" onclick="extractAllFacts()" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🧩 整理事实</button>
             </div>
             <div class="archive-content" id="archiveContent"></div>
@@ -1047,12 +1047,10 @@
         // ================= 【记忆库 · 事实碎片】 =================
         // 每天只保留一条庇护所记忆：先删掉这一天的旧记忆，再写入新的
         async function saveDailyMemory(dayId, jsonMem, folderLabel) {
-            memoryDb = (memoryDb || []).filter(m => (m.date || '') !== dayId);
             memoryDb.unshift(jsonMem);
             try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
             renderMemoryUI();
             if (dbConnected && db) {
-                try { await db.from('cozy_memories').delete().eq('memory_date', dayId); } catch (e) {}
                 try {
                     await db.from('cozy_memories').insert([{
                         memory_date: dayId,
@@ -1296,11 +1294,13 @@ ${historyText}
 
                 const { data: cloudMems } = await db.from('cozy_memories').select('*').order('created_at', { ascending: false });
                 if (cloudMems && cloudMems.length > 0) {
-                    // 云端为准：云端已有的日期就用云端版本，只额外保留"云端完全没有的日期"的本地记忆
-                    const cloudDates = new Set(cloudMems.map(c => String(c.memory_date || '').replace(/\//g, '-')));
-                    const normalizedCloud = cloudMems.map(c => ({ date: c.memory_date, memory: c.memory, emotion: c.emotion, state: c.state, folder: c.folder }));
-                    const localOnly = (memoryDb || []).filter(m => !cloudDates.has(memoryItemDate(m)));
-                    memoryDb = normalizedCloud.concat(localOnly);
+                    const mergedMems = [...memoryDb];
+                    const mKeys = new Set(memoryDb.map(m => memoryItemDate(m) + '|' + (m.memory || '')));
+                    cloudMems.forEach(c => {
+                        const key = String(c.memory_date || '').replace(/\//g, '-') + '|' + (c.memory || '');
+                        if (!mKeys.has(key)) { mergedMems.push({ date: c.memory_date, memory: c.memory, emotion: c.emotion, state: c.state, folder: c.folder }); mKeys.add(key); }
+                    });
+                    memoryDb = mergedMems;
                     try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
                     renderMemoryUI();
                 }
@@ -1848,9 +1848,9 @@ ${formattedHistoryText}
                 head.innerHTML = `<span style="font-weight:bold;">📁 ${d}</span><span style="opacity:0.55; font-size:11px;">（${items.length} 条）</span>`;
                 if (items.length > 1) {
                     const btn = document.createElement('button');
-                    btn.innerText = "🧹 合并";
+                    btn.innerText = "🪄 整理";
                     btn.style.cssText = "margin-left:auto; font-size:10.5px; padding:2px 8px; border:none; border-radius:8px; background:rgba(143,158,139,0.18); color:var(--text-color); cursor:pointer;";
-                    btn.onclick = () => mergeMemoriesForDay(d);
+                    btn.onclick = () => organizeMemoriesForDay(d);
                     head.appendChild(btn);
                 }
                 folder.appendChild(head);
@@ -1879,65 +1879,61 @@ ${formattedHistoryText}
             return d || '未知日期';
         }
 
-        // 合并某一天的多条记忆为一条
-        async function mergeMemoriesForDay(dateStr) {
+        // 把某一天的多条记忆，按"话题"重新组织成若干条独立记忆（保留多条、去掉重复）
+        async function organizeMemoriesForDay(dateStr, silent) {
             const items = (memoryDb || []).filter(m => memoryItemDate(m) === dateStr);
+            if (items.length <= 1) { if (!silent) alert("这一天只有一条记忆，无需整理～"); return 0; }
+            if (!silent && !confirm(`把 ${dateStr} 的 ${items.length} 条记忆，按话题重新整理成几条不重复的记忆？\n（会删掉旧的零散条目，换成按话题划分的版本）`)) return 0;
             const texts = items.map(m => m.memory).filter(Boolean);
-            if (texts.length <= 1) { alert("这一天只有一条记忆，无需合并～"); return; }
-            if (!confirm(`把 ${dateStr} 的 ${texts.length} 条记忆合并成一条？\n（会删除这些旧条目，生成一条整合后的记忆）`)) return;
             try {
-                const prompt = `请把下面关于同一天（${dateStr}）的多条记忆总结，合并成一段不重复、条理清晰的完整记忆。必须保留所有具体事实、偏好、承诺与状态，删除重复和啰嗦。只输出合并后的记忆正文，不要解释。\n\n` + texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n');
+                const prompt = `下面是同一天（${dateStr}）的多条记忆总结，内容互相重复。请把它们重新组织成**按话题划分**的若干条独立记忆。
+每条记忆 40~120 字，主题互不重复（例如：生活状态 / 学习工作 / 兴趣爱好 / 情感与关系 / 计划与承诺…，按实际内容取名）。
+必须保留全部具体细节（人名、地点、时间、书籍、歌曲、口味、承诺等），删除重复和啰嗦。
+只输出标准 JSON 数组，不要解释或 markdown 标记，格式严格为：
+[{"topic":"话题名","memory":"这一话题的完整记忆","emotion":"[情绪打分]","state":"状态"}]
+
+原始记忆：
+${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                 const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] }) });
                 const resData = await response.json();
                 if (resData.error) throw new Error(resData.error.message);
-                const merged = resData.choices[0].message.content.trim();
-                if (!merged) throw new Error("合并结果为空");
+                const raw = resData.choices[0].message.content.trim();
+                let arr = null;
+                try { const m = raw.replace(/```json/g, '').replace(/```/g, '').match(/\[[\s\S]*\]/); if (m) arr = JSON.parse(m[0]); } catch (e) { arr = null; }
+                if (!Array.isArray(arr) || arr.length === 0) throw new Error("整理结果解析失败");
 
-                const first = items[0];
                 if (dbConnected && db) { try { await db.from('cozy_memories').delete().eq('memory_date', dateStr); } catch (e) {} }
                 memoryDb = (memoryDb || []).filter(m => memoryItemDate(m) !== dateStr);
-                const mergedObj = { date: dateStr, folder: `${dateStr} 手记`, memory: merged, emotion: first.emotion || '', state: first.state || '温柔陪伴' };
-                memoryDb.unshift(mergedObj);
-                localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb));
-                if (dbConnected && db) {
-                    try { await db.from('cozy_memories').insert([{ memory_date: dateStr, folder: `${dateStr} 手记`, memory: merged, emotion: mergedObj.emotion, state: mergedObj.state }]); } catch (e) {}
+                let added = 0;
+                for (const t of arr) {
+                    if (!t || !t.memory) continue;
+                    const obj = { date: dateStr, folder: `${dateStr} 手记 · ${t.topic || '记忆'}`, memory: t.memory, emotion: t.emotion || '', state: t.state || '温柔陪伴' };
+                    memoryDb.unshift(obj);
+                    added++;
+                    if (dbConnected && db) {
+                        try { await db.from('cozy_memories').insert([{ memory_date: dateStr, folder: obj.folder, memory: obj.memory, emotion: obj.emotion, state: obj.state }]); } catch (e) {}
+                    }
                 }
+                try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
                 renderMemoryUI();
-            } catch (e) { alert("合并失败：" + e.message); }
+                if (!silent) alert(`已整理为 ${added} 条话题记忆`);
+                return added;
+            } catch (e) { if (!silent) alert("整理失败：" + e.message); return 0; }
         }
 
-        // 一键合并所有"同一天多条"的记忆
-        async function mergeAllMemories() {
+        // 一键整理所有"同一天多条"的记忆
+        async function organizeAllMemories() {
             const byDate = {};
             (memoryDb || []).forEach(m => { const d = memoryItemDate(m); (byDate[d] = byDate[d] || []).push(m); });
             const multiDays = Object.keys(byDate).filter(d => byDate[d].length > 1);
-            if (multiDays.length === 0) { alert("没有需要合并的重复记忆～"); return; }
-            if (!confirm(`有 ${multiDays.length} 天存在多条记忆，逐天合并成一条？`)) return;
-            let done = 0;
+            if (multiDays.length === 0) { alert("没有需要整理的多条记忆～"); return; }
+            if (!confirm(`有 ${multiDays.length} 天存在多条记忆，逐天按话题整理？`)) return;
+            let okDays = 0;
             for (const d of multiDays) {
-                const items = (memoryDb || []).filter(m => memoryItemDate(m) === d);
-                const texts = items.map(m => m.memory).filter(Boolean);
-                if (texts.length <= 1) continue;
-                try {
-                    const prompt = `请把下面关于同一天（${d}）的多条记忆总结，合并成一段不重复、条理清晰的完整记忆。必须保留所有具体事实、偏好、承诺与状态，删除重复和啰嗦。只输出合并后的记忆正文，不要解释。\n\n` + texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n');
-                    const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: prompt }] }) });
-                    const resData = await response.json();
-                    if (resData.error) throw new Error(resData.error.message);
-                    const merged = resData.choices[0].message.content.trim();
-                    if (!merged) continue;
-                    const first = items[0];
-                    if (dbConnected && db) { try { await db.from('cozy_memories').delete().eq('memory_date', d); } catch (e) {} }
-                    memoryDb = (memoryDb || []).filter(m => memoryItemDate(m) !== d);
-                    memoryDb.unshift({ date: d, folder: `${d} 手记`, memory: merged, emotion: first.emotion || '', state: first.state || '温柔陪伴' });
-                    localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb));
-                    if (dbConnected && db) {
-                        try { await db.from('cozy_memories').insert([{ memory_date: d, folder: `${d} 手记`, memory: merged, emotion: first.emotion || '', state: first.state || '温柔陪伴' }]); } catch (e) {}
-                    }
-                    done++;
-                    renderMemoryUI();
-                } catch (e) { console.warn("合并失败 " + d, e); }
+                const n = await organizeMemoriesForDay(d, true);
+                if (n > 0) okDays++;
             }
-            alert(`已合并 ${done} 天`);
+            alert(`已整理 ${okDays} 天`);
         }
 
         // 🚀 核心升级：备忘录完成即自动删除
