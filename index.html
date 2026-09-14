@@ -863,6 +863,35 @@
             document.getElementById('imagePreview').src = '';
         }
 
+        // ================= 【图床：把 base64 上传到 Supabase Storage，只存链接】 =================
+        const MEDIA_BUCKET = 'cozy-media';
+        function base64ToBlob(dataUrl) {
+            const parts = String(dataUrl).split(',');
+            const meta = parts[0] || '';
+            const b64 = parts[1] || '';
+            const mimeMatch = meta.match(/data:(.*?)(;|$)/);
+            const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+            const bin = atob(b64);
+            const len = bin.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+            return { blob: new Blob([bytes], { type: mime }), mime };
+        }
+
+        async function uploadImageToStorage(dataUrl, folder) {
+            if (!dbConnected || !db) throw new Error("未连接云端");
+            const { blob, mime } = base64ToBlob(dataUrl);
+            let ext = (mime.split('/')[1] || 'jpg').toLowerCase();
+            if (ext === 'jpeg') ext = 'jpg';
+            if (!/^[a-z0-9]+$/.test(ext)) ext = 'jpg';
+            const dir = folder || 'chat';
+            const fileName = `${dir}/${currentSessionId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+            const { error } = await db.storage.from(MEDIA_BUCKET).upload(fileName, blob, { contentType: mime, upsert: false });
+            if (error) throw error;
+            const { data } = db.storage.from(MEDIA_BUCKET).getPublicUrl(fileName);
+            return data.publicUrl;
+        }
+
         // ================= 【2. 本地存储管理与云端实时拉回（微信同款无缝两端同步）】 =================
         // 分页拉取某一天的全部聊天（突破 Supabase 单次 1000 条上限）
         async function fetchAllBySession(sessionId) {
@@ -1388,7 +1417,12 @@ ${historyText}
                     
                     // 💡 【全新进化：多模态图像连携渲染结构】
                     // 我们把压缩后的 Base64 数据和小千对图片的语义描述用自定义语法结合起来
-                    const imageMarkup = `[LinesImage: ${pendingImageBase64}]`;
+                    // 把图片上传到 Supabase Storage，聊天记录里只保留链接（失败则退回 base64）
+                    let imageUrl = pendingImageBase64;
+                    try {
+                        if (dbConnected && db) imageUrl = await uploadImageToStorage(pendingImageBase64, 'chat');
+                    } catch (upErr) { console.warn("图片上传失败，退回 base64：", upErr.message); }
+                    const imageMarkup = `[LinesImage: ${imageUrl}]`;
                     if (text) { 
                         text = `${imageMarkup}\n[小千看到数据流中描述：${imgDescription}]\n${text}`; 
                     } else { 
@@ -2674,7 +2708,13 @@ ${formattedHistoryText}
             const text = (input && input.value || '').trim();
             if (!text && !pendingMomentImage) return;
             const timeLabel = nowLabel();
-            const moment = { author: 'user', text: text, image: pendingMomentImage || '', time: timeLabel, comments: [] };
+            // 图片先上传到图床，只存链接
+            let imgUrl = '';
+            if (pendingMomentImage) {
+                try { imgUrl = (dbConnected && db) ? await uploadImageToStorage(pendingMomentImage, 'moments') : pendingMomentImage; }
+                catch (e) { console.warn("朋友圈图片上传失败，退回 base64：", e.message); imgUrl = pendingMomentImage; }
+            }
+            const moment = { author: 'user', text: text, image: imgUrl, time: timeLabel, comments: [] };
             moments.unshift(moment);
             saveMoments();
             renderMoments();
