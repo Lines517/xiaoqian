@@ -559,6 +559,9 @@
         const API_KEY = "fHHaJSoscSQPLyygDFWvE9SvoM7CN3Z3i1BpbTiMwNTtbjx0"; 
         let API_MODEL = localStorage.getItem('cozy_selected_model') || "[企业cli-0.01]gemini-3.5-flash";
         const ANNIVERSARY_DATE = new Date('2026-09-12T00:00:00+08:00'); // 认识日
+        // 【可选】部署 Supabase Edge Function 后填这里，就能把 API Key 藏到服务端。
+        // 例如： "https://kejcaijcqlfmtlfxktrk.supabase.co/functions/v1/chat"
+        const EDGE_FN_URL = "";
         // =======================================================
 
         const cdnList = [
@@ -647,6 +650,27 @@
                 script.onload = () => resolve();
                 script.onerror = () => reject(new Error("Failed to load: " + url));
                 document.head.appendChild(script);
+            });
+        }
+
+        // 统一的流式请求：优先走 Supabase Edge Function（若已配置），否则直连模型接口
+        async function openModelStream(completeMessages) {
+            const payload = { model: API_MODEL, messages: completeMessages, stream: true };
+            if (EDGE_FN_URL) {
+                try {
+                    const r = await fetch(EDGE_FN_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_KEY}`, "apikey": SUPABASE_KEY },
+                        body: JSON.stringify(payload)
+                    });
+                    if (r.ok && r.body) return r;
+                    console.warn("Edge Function 非 200，改用直连");
+                } catch (e) { console.warn("Edge Function 不可用，改用直连:", e.message); }
+            }
+            return await fetch(API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
+                body: JSON.stringify(payload)
             });
         }
 
@@ -1619,115 +1643,62 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
             // 构建完整的请求体消息队列，加入系统设定
             const completeMessages = [{ role: "system", content: systemPrompt }, ...apiMessages];
 
-            // 网页通过 SSE 打字机流式通道建立与新后端的连接
+            // 网页通过 SSE 打字机流式通道（优先 Edge Function，其次直连）
             try {
-                // 如果后端在线，使用打字机流式输出；如果本地直接打开运行，则平滑降级为普通API一问一答
-                let useLocalBackend = false;
-                try {
-                    const checkRes = await fetch("http://localhost:3000/health");
-                    if (checkRes.ok) useLocalBackend = true;
-                } catch(e) {}
-
-                // 在气泡区先建立一个空的AI小千回复气泡，用来承载实时打字机吐字
                 const aiBubbleTextEl = createMessageRow('assistant', getNowTimeStr());
                 aiBubbleTextEl.classList.add('typing-glow');
                 aiBubbleTextEl.textContent = '...';
                 container.scrollTop = container.scrollHeight;
 
-                if (useLocalBackend) {
-                    const response = await fetch("http://localhost:3000/api/chat", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ messages: completeMessages })
-                    });
-
-                    if (!response.ok) {
-                        throw new Error("后端连接失败");
+                const response = await openModelStream(completeMessages);
+                if (!response || !response.ok || !response.body) {
+                    let msg = "接口出错";
+                    try { const j = await response.json(); msg = (j.error && (j.error.message || j.error)) || msg; } catch (e) {}
+                    if (String(msg).includes("余额不足") || String(msg).includes("学分") || String(msg).includes("Quota") || String(msg).includes("credit")) {
+                        throw new Error("小千的脑力值（学分）不足啦，请联系主人给小千充值哦～");
                     }
-
-                    const reader = response.body.getReader();
-                    const decoder = new TextDecoder('utf-8');
-                    let fullReplyText = "";
-                    let buffer = "";
-
-                    aiBubbleTextEl.classList.remove('typing-glow');
-                    aiBubbleTextEl.innerHTML = "";
-
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-
-                        buffer += decoder.decode(value, { stream: true });
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop(); // 保留不完整的一行在缓冲区
-
-                        for (let line of lines) {
-                            line = line.trim();
-                            if (!line || !line.startsWith('data:')) continue;
-                            const dataStr = line.substring(5).trim();
-                            if (dataStr === '[DONE]') continue;
-
-                            try {
-                                const parsed = JSON.parse(dataStr);
-                                if (parsed.error) {
-                                    throw new Error(parsed.error);
-                                }
-                                
-                                // 从Gemini API/OpenAI API 的 SSE 结构提取文本块
-                                if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
-                                    const chunk = parsed.choices[0].delta.content;
-                                    fullReplyText += chunk;
-                                    // 实时通过 Marked.js 渲染打字机文字，让加粗、高亮、换行平滑出来
-                                    try {
-                                        const visible = fullReplyText.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '');
-                                        aiBubbleTextEl.innerHTML = messageContentToHtml(visible);
-                                    } catch (me) {
-                                        aiBubbleTextEl.innerHTML = fullReplyText.replace(/\n/g, '<br>');
-                                    }
-                                    container.scrollTop = container.scrollHeight;
-                                }
-                            } catch (e) {
-                                console.warn("解析流式区块数据失败:", e);
-                            }
-                        }
-                    }
-
-                    // 最终结束传输，补全代码块高亮与复制按钮等UI渲染
-                    const finalReply = applyReplyTokens(fullReplyText.trim());
-                    if (!finalReply) {
-                        throw new Error("收到空白回复");
-                    }
-
-                    const aiMsg = { session_id: currentSessionId, role: "assistant", content: finalReply, time: getNowTimeStr() };
-                    allChatMessages.push(aiMsg);
-                    saveChats();
-
-                    // 重新对这最后一条消息精细润色排版
-                    aiBubbleTextEl.innerHTML = messageContentToHtml(finalReply);
-                } else {
-                    // 平滑降级：无缝切换为 Netlify 或静态端直连的普通一问一答，省去任何配置成本！
-                    const response = await fetch(API_URL, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                        body: JSON.stringify({ model: API_MODEL, messages: completeMessages })
-                    });
-
-                    const resData = await response.json();
-                    if (resData.error) {
-                        if (resData.error.message && (resData.error.message.includes("余额不足") || resData.error.message.includes("学分") || resData.error.message.includes("Quota") || resData.error.message.includes("credit"))) {
-                            throw new Error("小千的脑力值（学分）不足啦，请联系主人给小千充值哦～");
-                        }
-                        throw new Error(resData.error.message);
-                    }
-                    const reply = applyReplyTokens(resData.choices[0].message.content.trim());
-
-                    const aiMsg = { session_id: currentSessionId, role: "assistant", content: reply, time: getNowTimeStr() };
-                    allChatMessages.push(aiMsg);
-                    saveChats();
-
-                    aiBubbleTextEl.classList.remove('typing-glow');
-                    aiBubbleTextEl.innerHTML = messageContentToHtml(reply);
+                    throw new Error(msg);
                 }
+
+                aiBubbleTextEl.classList.remove('typing-glow');
+                aiBubbleTextEl.innerHTML = "";
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let fullReplyText = "";
+                let buffer = "";
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (let line of lines) {
+                        line = line.trim();
+                        if (!line || !line.startsWith('data:')) continue;
+                        const dataStr = line.substring(5).trim();
+                        if (dataStr === '[DONE]') continue;
+                        try {
+                            const parsed = JSON.parse(dataStr);
+                            if (parsed.error) throw new Error(parsed.error.message || parsed.error);
+                            const delta = parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content;
+                            if (delta) {
+                                fullReplyText += delta;
+                                const visible = fullReplyText.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '');
+                                try { aiBubbleTextEl.innerHTML = messageContentToHtml(visible); }
+                                catch (me) { aiBubbleTextEl.innerHTML = visible.replace(/\n/g, '<br>'); }
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        } catch (e) { console.warn("解析流式数据失败:", e.message); }
+                    }
+                }
+
+                const finalReply = applyReplyTokens(fullReplyText.trim());
+                if (!finalReply) throw new Error("收到空白回复");
+                aiBubbleTextEl.innerHTML = messageContentToHtml(finalReply);
+
+                const aiMsg = { session_id: currentSessionId, role: "assistant", content: finalReply, time: getNowTimeStr() };
+                allChatMessages.push(aiMsg);
+                saveChats();
 
                 // 对新生成的代码块进行渲染和高亮
                 aiBubbleTextEl.querySelectorAll('pre').forEach(pre => {
