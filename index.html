@@ -1278,8 +1278,12 @@
                 catch(e) { console.error("❌ 发送用户消息失败（请检查 Supabase RLS 权限）:", e.message); }
             }
 
-            const todayChats = allChatMessages.filter(msg => msg.session_id === currentSessionId);
-            const apiMessages = todayChats.map(msg => ({ role: msg.role, content: sanitizeForApi(msg.content) }));
+            // 🚀 上下文只带「今天 + 昨天」两天，且最多最近 80 条，避免记录过多导致请求变慢
+            const yesterdaySid = getCozySessionId(new Date(Date.now() - 24 * 60 * 60 * 1000));
+            const contextChats = allChatMessages
+                .filter(msg => msg.session_id === currentSessionId || msg.session_id === yesterdaySid)
+                .slice(-80);
+            const apiMessages = contextChats.map(msg => ({ role: msg.role, content: sanitizeForApi(msg.content) }));
 
             // 🚀 注入备忘录和书单
             let extraContextPrompt = "";
