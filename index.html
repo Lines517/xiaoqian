@@ -653,8 +653,15 @@
         let avatarUser = "";
         // 本轮消息里线条是否手动上传了头像（用于阻止模型再用 [SET_AVATAR] 覆盖掉）
         let userSetAvatarThisTurn = false;
+        // 🔒 头像锁：线条自己设过头像后锁住，模型不能自作主张换；只有她明确要求才解锁
+        let avatarLocked = false;
         try { avatarXiaoqian = localStorage.getItem('cozy_avatar_xiaoqian') || ""; } catch (e) {}
         try { avatarUser = localStorage.getItem('cozy_avatar_user') || ""; } catch (e) {}
+        try { avatarLocked = (localStorage.getItem('cozy_avatar_locked') || '1') === '1'; } catch (e) {}
+        function setAvatarLock(locked) {
+            avatarLocked = !!locked;
+            try { localStorage.setItem('cozy_avatar_locked', avatarLocked ? '1' : '0'); } catch (e) {}
+        }
 
         // 更新手机顶部状态栏时间
         function updateStatusBarTime() {
@@ -1643,12 +1650,19 @@ ${historyText}
 
             btn.innerText = "发送中...";
 
-            // 如果线条把图片说成“头像”，就用这张图给小千换上（并锁住本轮，防止模型用 [SET_AVATAR] 覆盖）
+            // 线条明确说"换个头像"（且不是发图）时，解锁，允许小千自己挑一个
+            if (!pendingImageBase64 && /换(个|一|新)?(新)?头像/.test(text)) {
+                setAvatarLock(false);
+                console.log('🔓 线条要求换头像，已解锁');
+            }
+
+            // 如果线条把图片说成“头像”，就用这张图给小千换上，并上锁（模型以后不能覆盖）
             const sentAvatarMatch = text.match(/\[LinesImage:\s*([\s\S]+?)\]/);
             if (sentAvatarMatch && /头像/.test(text)) {
                 userSetAvatarThisTurn = true;
+                setAvatarLock(true);
                 const rawAv = sentAvatarMatch[1].trim();
-                appendSystemMessage("🖼️ 正在把小千的头像换成你发的这张…");
+                appendSystemMessage("🖼️ 正在把小千的头像换成你发的这张…（已锁定，小千不会再自己换掉）");
                 makeSquareAvatar(rawAv, 240).then(sq => {
                     avatarXiaoqian = sq;
                     try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
@@ -1760,7 +1774,7 @@ Always keep an extremely gentle, mature and equal tone.
 【页面技术背景（供读代码时参考）】：这个页面是一个单文件网页应用（index.html，托管在 GitHub 的 Lines517/xiaoqian，用 Supabase 做云端数据库）。页面里的 App 有：灯下闲谈(聊天)、碎碎念(日程)、一起读书(共读)、一起听歌、朋友圈、庇护所记忆。数据表有 cozy_chats/cozy_memories/cozy_facts/cozy_moments/cozy_reading_notes/cozy_playlist。当对方让你看代码或提修改建议时，请给出具体、可执行、按优先级排序的建议。
 【主动配图规则】：当对方说想看图片、想看图、让你发张图，或当下意境特别适合一幅画面时，请务必在回复里单独一行输出 [SHOW_IMAGE: 英文图片关键词]（2~3个英文词，逗号分隔，例如 [SHOW_IMAGE: moon, forest]）。系统会自动为你配上一张对应的图片，你只需在图片旁配一句简短的话即可。
 【读图规则】：对方发来图片时，你会先看到对图片的文字转述（可能包含图中文字）。请基于这些内容自然地回应；如果图里有文字，可以提到你看到了什么字。
-【更换头像规则】：当对方说想让你换头像，或你此刻很想换一个更贴合心境的头像时，可以单独一行写 [SET_AVATAR: 英文关键词]（例如 [SET_AVATAR: starry, night]），系统会自动在网上为你找一张新头像换上。
+【更换头像规则】：只有对方**明确让你换头像**（例如说"换个头像吧"）时，才可以单独一行写 [SET_AVATAR: 英文关键词]（例如 [SET_AVATAR: starry, night]）。其余任何时候都**不要主动换头像**——她为你选的头像要保留。
 【链接阅读规则】：如果消息里出现【线条发来的链接：…】这一段，那是系统替你打开网页后抓到的内容，请基于它自然回应；如果里面写着"打不开/需要登录/有反爬"，就诚实地告诉她你打不开这篇，请她截图或把关键内容贴给你，不要假装看过。`;
 
             // 🔗 消息里有网址就先让总机读一读，把结果附在本轮消息后面
@@ -1833,6 +1847,7 @@ Always keep an extremely gentle, mature and equal tone.
                 }
                 const finalReply = applyReplyTokens(replyText);
                 if (!finalReply) throw new Error("收到空白回复");
+                setAvatarLock(true); // 本轮处理完重新上锁：模型只在被明确要求时才能换头像
                 aiBubbleTextEl.innerHTML = messageContentToHtml(finalReply);
                 attachSpeakButton(aiBubbleTextEl, finalReply);
                 if (ttsEnabled) speakText(finalReply);
@@ -2479,11 +2494,16 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             let out = String(text == null ? '' : text);
             const m = out.match(/\[SET_AVATAR:\s*([^\]]+)\]/i);
             if (m) {
-                const kw = m[1].trim();
-                avatarXiaoqian = `https://loremflickr.com/160/160/${flickrKeywords(kw, 'cozy')}`;
-                try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
-                saveAvatarsToCloud();
-                refreshAvatarsInDom();
+                // 头像已上锁（线条自己设过）时，只把指令抹掉，不执行
+                if (!avatarLocked) {
+                    const kw = m[1].trim();
+                    avatarXiaoqian = `https://loremflickr.com/160/160/${flickrKeywords(kw, 'cozy')}`;
+                    try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
+                    saveAvatarsToCloud();
+                    refreshAvatarsInDom();
+                } else {
+                    console.log('🔒 头像已锁定，忽略 [SET_AVATAR]');
+                }
                 out = out.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
             }
             return out;
@@ -2597,12 +2617,13 @@ ${code}
             input.click();
         }
 
-        // 点击“小千”头像：让小千自己在网上找一张新图
+        // 点击“小千”头像：让小千自己在网上找一张新图（并上锁，防止模型再乱换）
         function changeXiaoqianAvatar() {
             const pool = ['forest', 'moon', 'starry', 'cat', 'rain', 'tea', 'books', 'cozy', 'night', 'flower'];
             const kw = pool[Math.floor(Math.random() * pool.length)];
             avatarXiaoqian = `https://loremflickr.com/160/160/${flickrKeywords(kw + ',cozy', 'cozy')}`;
             try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
+            setAvatarLock(true);
             saveAvatarsToCloud();
             refreshAvatarsInDom();
         }
@@ -2654,7 +2675,7 @@ ${code}
 
             // 小千主动更换头像指令 [SET_AVATAR: 关键词]
             const setAvatarMatch = original.match(/\[SET_AVATAR:\s*([^\]]+)\]/i);
-            if (setAvatarMatch) {
+            if (setAvatarMatch && !avatarLocked) {
                 const kw = setAvatarMatch[1].trim();
                 avatarXiaoqian = `https://loremflickr.com/160/160/${flickrKeywords(kw, 'cozy')}`;
                 try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
