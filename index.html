@@ -143,6 +143,16 @@
         .search-item:hover {
             border-color: var(--primary-color); background-color: rgba(143, 158, 139, 0.15);
         }
+        .voice-item { display: flex; align-items: center; gap: 8px; }
+        .voice-item .vname { flex: 1; min-width: 0; }
+        .voice-item .vname small { display: block; font-size: 10.5px; opacity: 0.5; }
+        .voice-item.active { border-color: var(--primary-color); background-color: rgba(143, 158, 139, 0.18); }
+        .voice-item .vtest { background: none; border: none; cursor: pointer; font-size: 14px; opacity: 0.6; padding: 0 4px; }
+        .voice-item .vtest:hover { opacity: 1; }
+        .pitch-row { display: flex; align-items: center; gap: 6px; padding: 4px 2px; flex-wrap: wrap; }
+        .pitch-row .pill { font-size: 12px; padding: 4px 12px; border-radius: 14px; border: 1px solid rgba(27,59,43,0.15); background: transparent; color: var(--text-color); cursor: pointer; }
+        .pitch-row .pill.active { background-color: var(--primary-color); color: var(--bg-color); border-color: var(--primary-color); }
+        .voice-hint { font-size: 11.5px; line-height: 1.6; opacity: 0.6; padding: 4px 2px 2px; }
         .search-item-meta {
             display: flex; justify-content: space-between; font-size: 11px; opacity: 0.5; margin-bottom: 4px;
         }
@@ -458,6 +468,7 @@
                     </select>
                     <button type="button" onclick="forceCloudSync()" title="同步" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔄</button>
                     <button type="button" id="ttsToggleBtn" onclick="toggleTTS()" title="让小千读出来" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔇</button>
+                    <button type="button" onclick="openVoicePanel()" title="选择小千的声音（男声/音调）" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🗣️</button>
                     <button type="button" onclick="xiaoqianReviewCode()" title="读代码" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔧</button>
                     <button type="button" onclick="triggerMemoryConsolidation(false)" title="整理记忆" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.6; padding:0 4px;">🧠</button>
                 </div>
@@ -477,6 +488,15 @@
                     <button class="back-btn" onclick="closeSearchPanel()" style="font-size:16px;">关闭 ×</button>
                 </div>
                 <div class="search-results-list" id="searchResultsList"></div>
+            </div>
+
+            <!-- 🗣️ 声音选择面板 -->
+            <div class="search-results-overlay" id="voicePanel">
+                <div class="search-results-header">
+                    <span style="font-size:13px; font-weight:bold; opacity:0.85;">🗣️ 小千的声音</span>
+                    <button class="back-btn" onclick="closeVoicePanel()" style="font-size:16px;">关闭 ×</button>
+                </div>
+                <div class="search-results-list" id="voiceList"></div>
             </div>
             
             <div class="date-tabs-container" id="dateTabs"></div>
@@ -3272,21 +3292,57 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
         // ================= 【🔊 语音：朗读 + 语音输入】 =================
         let ttsEnabled = false;
         let ttsVoice = null;
+        let ttsVoiceURI = '';
+        let ttsPitch = 1.0;
         let chatRecog = null;
         let recognizing = false;
 
+        // 中文男声 / 女声 名字特征（各家系统命名不一，尽量覆盖）
+        const MALE_VOICE_RE = /yunxi|yunyang|yunjian|yunye|yunfeng|yunjie|kangkang|云希|云扬|云健|云野|云枫|云杰|康康|male|男/i;
+        const FEMALE_VOICE_RE = /xiaoxiao|xiaoyi|xiaomo|xiaorui|xiaoshuang|xiaohan|huihui|yaoyao|ting-?ting|mei-?jia|sin-?ji|female|女|晓晓|晓伊|晓墨|晓睿|晓双|晓涵|慧慧|瑶瑶|婷婷|美佳/i;
+
+        function zhVoices() {
+            try {
+                return (window.speechSynthesis.getVoices() || []).filter(v => /^zh/i.test(v.lang) || /chinese|中文|普通话|国语/i.test(v.name));
+            } catch (e) { return []; }
+        }
+        function hasMaleVoice() {
+            return zhVoices().some(v => MALE_VOICE_RE.test(v.name));
+        }
+        // 决定用哪个声音：优先用户选定 -> 中文男声 -> 非女声的中文 -> 任意中文
+        function resolveVoice() {
+            if (!('speechSynthesis' in window)) return;
+            const all = window.speechSynthesis.getVoices() || [];
+            if (ttsVoiceURI) {
+                const picked = all.find(v => v.voiceURI === ttsVoiceURI || v.name === ttsVoiceURI);
+                if (picked) { ttsVoice = picked; return; }
+            }
+            const zh = all.filter(v => /^zh/i.test(v.lang));
+            ttsVoice = zh.find(v => MALE_VOICE_RE.test(v.name))
+                || zh.find(v => !FEMALE_VOICE_RE.test(v.name))
+                || zh[0]
+                || null;
+        }
+
         function initTTS() {
-            try { ttsEnabled = localStorage.getItem('cozy_tts_on') === '1'; } catch (e) {}
+            try {
+                ttsEnabled = localStorage.getItem('cozy_tts_on') === '1';
+                ttsVoiceURI = localStorage.getItem('cozy_tts_voice') || '';
+                const p = parseFloat(localStorage.getItem('cozy_tts_pitch') || '');
+                ttsPitch = isNaN(p) ? 1.0 : p;
+            } catch (e) {}
             updateTTSButton();
             if (!('speechSynthesis' in window)) return;
-            const pickVoice = () => {
+            resolveVoice();
+            window.speechSynthesis.onvoiceschanged = function () { resolveVoice(); };
+            // 有些浏览器要延迟一会儿才吐出声音列表
+            setTimeout(function () {
+                resolveVoice();
+                // 没有中文男声时，默认把音调压低一点（用户没手动设过才自动设）
                 try {
-                    const vs = window.speechSynthesis.getVoices() || [];
-                    ttsVoice = vs.find(v => /zh[-_]?(CN|Hans)/i.test(v.lang)) || vs.find(v => /zh|Chinese/i.test(v.lang)) || null;
+                    if (!localStorage.getItem('cozy_tts_pitch') && !hasMaleVoice()) ttsPitch = 0.8;
                 } catch (e) {}
-            };
-            pickVoice();
-            window.speechSynthesis.onvoiceschanged = pickVoice;
+            }, 900);
         }
 
         function updateTTSButton() {
@@ -3329,12 +3385,85 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
             if (!t) return;
             try {
                 window.speechSynthesis.cancel();
+                if (!ttsVoice) resolveVoice();
                 const u = new SpeechSynthesisUtterance(t);
                 u.lang = 'zh-CN';
                 if (ttsVoice) u.voice = ttsVoice;
-                u.rate = 1.02; u.pitch = 1.0;
+                u.rate = 1.02;
+                u.pitch = ttsPitch;
                 window.speechSynthesis.speak(u);
             } catch (e) { console.warn("朗读失败:", e); }
+        }
+
+        // ---- 🗣️ 声音选择面板 ----
+        function openVoicePanel() {
+            const panel = document.getElementById('voicePanel');
+            if (!panel) return;
+            renderVoiceList();
+            panel.classList.add('active');
+        }
+        function closeVoicePanel() {
+            const panel = document.getElementById('voicePanel');
+            if (panel) panel.classList.remove('active');
+        }
+        function renderVoiceList() {
+            const list = document.getElementById('voiceList');
+            if (!list) return;
+            resolveVoice();
+            const vs = zhVoices();
+            list.innerHTML = '';
+
+            // 音调
+            const pitchBox = document.createElement('div');
+            pitchBox.innerHTML = `<div style="font-size:12px;opacity:0.65;margin:2px 0 4px;">音调（越低沉越像男声）</div>
+                <div class="pitch-row">
+                    <button type="button" class="pill ${ttsPitch >= 0.95 ? 'active' : ''}" data-p="1">正常</button>
+                    <button type="button" class="pill ${(ttsPitch < 0.95 && ttsPitch >= 0.7) ? 'active' : ''}" data-p="0.8">低沉</button>
+                    <button type="button" class="pill ${ttsPitch < 0.7 ? 'active' : ''}" data-p="0.6">很沉</button>
+                </div>`;
+            list.appendChild(pitchBox);
+            pitchBox.querySelectorAll('.pill').forEach(b => {
+                b.onclick = () => {
+                    ttsPitch = parseFloat(b.getAttribute('data-p'));
+                    try { localStorage.setItem('cozy_tts_pitch', String(ttsPitch)); } catch (e) {}
+                    renderVoiceList();
+                    speakText('这样听起来怎么样？');
+                };
+            });
+
+            if (vs.length === 0) {
+                const hint = document.createElement('div');
+                hint.className = 'voice-hint';
+                hint.textContent = '还没读到系统里的中文语音。可能是浏览器还没加载好（稍等几秒再打开），或者设备没装中文语音包。';
+                list.appendChild(hint);
+                return;
+            }
+            if (!hasMaleVoice()) {
+                const hint = document.createElement('div');
+                hint.className = 'voice-hint';
+                hint.textContent = '⚠️ 这台设备上没找到"中文男声"，先用上面的「低沉/很沉」应急。想装真男声：Windows 打开「设置 → 时间和语言 → 语音 → 添加语音 → 中文(简体)」；手机端只能用系统自带语音，可选项有限。';
+                list.appendChild(hint);
+            }
+
+            vs.forEach(v => {
+                const item = document.createElement('div');
+                const isMale = MALE_VOICE_RE.test(v.name);
+                const active = ttsVoice && ttsVoice.voiceURI === v.voiceURI;
+                item.className = 'search-item voice-item' + (active ? ' active' : '');
+                item.innerHTML = `<div class="vname">${escapeMomentHtml(v.name)}${isMale ? ' 🚹' : ''}<small>${escapeMomentHtml(v.lang)}${v.localService ? ' · 离线' : ' · 在线'}</small></div><button type="button" class="vtest" title="试听">🔊</button>`;
+                item.onclick = () => {
+                    ttsVoiceURI = v.voiceURI; ttsVoice = v;
+                    try { localStorage.setItem('cozy_tts_voice', v.voiceURI); } catch (e) {}
+                    renderVoiceList();
+                    speakText('我是小千，现在用这个声音跟你说话。');
+                };
+                item.querySelector('.vtest').onclick = (ev) => {
+                    ev.stopPropagation();
+                    ttsVoice = v;
+                    speakText('我是小千，现在用这个声音跟你说话。');
+                };
+                list.appendChild(item);
+            });
         }
 
         function attachSpeakButton(bubbleEl, text) {
