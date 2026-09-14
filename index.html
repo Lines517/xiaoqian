@@ -944,22 +944,8 @@
                         union.forEach(m => appendMessageUI(m.role, m.content, m.time));
                         saveChats();
 
-                        // 把本地独有、云端缺失的消息回传云端（补救误删），并保证落在正确的日期里
-                        for (const m of union) {
-                            const k = (m.role || '') + '|' + String(m.content || '').trim();
-                            if (cloudKeys.has(k)) continue;
-                            let createdAt;
-                            if (m.time && /^\d{4}-\d{2}-\d{2}T/.test(m.time)) {
-                                createdAt = m.time;
-                            } else if (m.time && /^\d{2}:\d{2}$/.test(m.time)) {
-                                createdAt = `${sessionId}T${m.time}:00+08:00`;
-                            } else {
-                                createdAt = `${sessionId}T12:00:00+08:00`; // 无时间则放在当天中午，绝不使用"现在"
-                            }
-                            try {
-                                await db.from('cozy_chats').insert([{ session_id: sessionId, role: m.role, content: m.content, created_at: createdAt }]);
-                            } catch (e) { console.warn("回传本地消息失败:", e.message); }
-                        }
+                        // 注意：这里不再自动回传本地消息到云端。
+                        // 消息在发送时已实时写入 Supabase；此前"回传"逻辑会造成重复记录，已移除。
 
                         container.scrollTop = container.scrollHeight;
                         return; // 成功拉回并渲染，直接退出
