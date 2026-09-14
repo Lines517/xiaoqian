@@ -8,3 +8,7 @@ Thumbs.db
 backup_cozy_chats.json
 backup_*.json
 backup_*.txt
+
+# 临时校验产物
+temp_index_check.js
+*.tmp
