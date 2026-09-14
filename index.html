@@ -3428,8 +3428,22 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
             } catch (e) { console.warn("朗读失败:", e); }
         }
 
-        // ---- 🎙️ 真嗓子（ElevenLabs，经总机合成；不占用你电脑，无需魔法）----
+        // ---- 🎙️ 真嗓子（CosyVoice / 经总机合成；不占用你电脑，无需魔法）----
         let audioEl = null;
+        const REAL_VOICE_PRESETS = [
+            { id: 'FunAudioLLM/CosyVoice2-0.5B:alex',     label: '沉稳 alex' },
+            { id: 'FunAudioLLM/CosyVoice2-0.5B:benjamin', label: '低沉 benjamin' },
+            { id: 'FunAudioLLM/CosyVoice2-0.5B:charles',  label: '磁性 charles' },
+            { id: 'FunAudioLLM/CosyVoice2-0.5B:david',    label: '欢快 david' }
+        ];
+        function getRealVoice() {
+            try {
+                const v = localStorage.getItem('cozy_real_voice');
+                if (v) return v;
+            } catch (e) {}
+            return 'FunAudioLLM/CosyVoice2-0.5B:charles';
+        }
+        function setRealVoice(v) { try { localStorage.setItem('cozy_real_voice', v); } catch (e) {} }
         function getVoiceCap() {
             const v = parseInt(localStorage.getItem('cozy_voice_cap') || '3', 10);
             return isNaN(v) ? 3 : v;
@@ -3456,7 +3470,7 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
                 const r = await fetch(EDGE_FN_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}`, 'apikey': SUPABASE_KEY },
-                    body: JSON.stringify({ action: 'tts', text: t.slice(0, 500) })
+                    body: JSON.stringify({ action: 'tts', text: t.slice(0, 500), voice: getRealVoice() })
                 });
                 const ct = r.headers.get('content-type') || '';
                 if (!r.ok || !ct.includes('audio')) {
@@ -3503,11 +3517,22 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
             const vs = zhVoices();
             list.innerHTML = '';
 
-            // 🎙️ 真嗓子（ElevenLabs）
+            // 🎙️ 真嗓子（CosyVoice，经总机合成）
             const cap = getVoiceCap();
+            const curVoice = getRealVoice();
+            const isPreset = REAL_VOICE_PRESETS.some(p => p.id === curVoice);
             const realBox = document.createElement('div');
             realBox.style.marginBottom = '10px';
-            realBox.innerHTML = `<div style="font-size:12px;opacity:0.7;margin:2px 0 4px;">🎙️ 真嗓子（ElevenLabs）· 我每天最多主动说几句</div>
+            realBox.innerHTML = `<div style="font-size:12px;opacity:0.7;margin:2px 0 4px;">🎙️ 真嗓子 · 音色（点一下试听）</div>
+                <div class="pitch-row">
+                    ${REAL_VOICE_PRESETS.map(p => `<button type="button" class="pill ${p.id === curVoice ? 'active' : ''}" data-v="${p.id}">${p.label}</button>`).join('')}
+                </div>
+                <div style="font-size:12px;opacity:0.7;margin:8px 0 4px;">自定义音色（克隆后把 id 粘这里，形如 speech:名字:…）</div>
+                <div class="pitch-row">
+                    <input type="text" id="realVoiceCustom" placeholder="speech:your-voice:..." value="${isPreset ? '' : curVoice}" style="flex:1; min-width:0; font-size:12px; padding:5px 10px; border-radius:12px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none;">
+                    <button type="button" class="pill" id="realVoiceSave">用这个</button>
+                </div>
+                <div style="font-size:12px;opacity:0.7;margin:8px 0 4px;">我每天最多主动说几句</div>
                 <div class="pitch-row">
                     <button type="button" class="pill ${cap === 1 ? 'active' : ''}" data-c="1">1 句</button>
                     <button type="button" class="pill ${cap === 3 ? 'active' : ''}" data-c="3">3 句</button>
@@ -3515,9 +3540,21 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
                 </div>
                 <div class="voice-hint">今天已用 ${voiceUsedToday()} 句 · 随时点任意消息旁的 🔊，我就用真嗓子读给你听</div>`;
             list.appendChild(realBox);
-            realBox.querySelectorAll('.pill').forEach(b => {
+            realBox.querySelectorAll('.pill[data-v]').forEach(b => {
+                b.onclick = () => { setRealVoice(b.getAttribute('data-v')); renderVoiceList(); speakReal('我是小千，这个声音你喜欢吗？'); };
+            });
+            realBox.querySelectorAll('.pill[data-c]').forEach(b => {
                 b.onclick = () => { setVoiceCap(parseInt(b.getAttribute('data-c'), 10)); renderVoiceList(); };
             });
+            const rvSave = realBox.querySelector('#realVoiceSave');
+            if (rvSave) rvSave.onclick = () => {
+                const inp = realBox.querySelector('#realVoiceCustom');
+                const v = (inp && inp.value || '').trim();
+                if (!v) return;
+                setRealVoice(v);
+                renderVoiceList();
+                speakReal('我是小千，这个声音你喜欢吗？');
+            };
 
             // 音调
             const pitchBox = document.createElement('div');
