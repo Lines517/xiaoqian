@@ -465,11 +465,13 @@
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
                     <select id="modelSelect" onchange="switchModel(this.value)" style="flex:1; min-width:0; font-size:11px; padding:3px 4px; border-radius:8px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none;">
-                        <option value="[企业cli-0.01]gemini-3.5-flash">Gemini 3.5</option>
-                        <option value="gpt-5.5">GPT-5.5</option>
-                        <option value="[开心果-aws-0.8]claude-opus-4-6">Claude Opus</option>
-                        <option value="[极光-AS-0.04]gemini-3.7-flash">Gemini 3.7</option>
-                        <option value="[极光-巅峰-0.022]grok-4.2">Grok 4.2</option>
+                        <option value="[反重力-0.02]gemini-3.7-flash">[反重力-0.02]gemini-3.7-flash</option>
+                        <option value="[反重力-0.025]gemini-2.5-pro">[反重力-0.025]gemini-2.5-pro</option>
+                        <option value="[奶油-官混-0.02]gemini-3-flash-preview">[奶油-官混-0.02]gemini-3-flash-preview</option>
+                        <option value="[芋泥-anti-0.01]gemini-3-flash-preview">[芋泥-anti-0.01]gemini-3-flash-preview</option>
+                        <option value="[芋泥-anti-0.01]gemini-2.5-flash">[芋泥-anti-0.01]gemini-2.5-flash</option>
+                        <option value="[企业cli-0.01]gemini-3-flash-preview">[企业cli-0.01]gemini-3-flash-preview</option>
+                        <option value="[奶油-官混-0.02]gemini-3.8-flash">[奶油-官混-0.02]gemini-3.8-flash</option>
                     </select>
                     <button type="button" onclick="forceCloudSync()" title="同步" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔄</button>
                     <button type="button" id="ttsToggleBtn" onclick="toggleTTS()" title="让小千读出来" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔇</button>
@@ -632,7 +634,7 @@
         const API_URL = "https://shufulei.net/v1/chat/completions"; 
         // 🔒 API Key 已移除：所有请求都通过 Supabase Edge Function("总机") 中转，前端不再保存密钥。
         const API_KEY = ""; 
-        let API_MODEL = localStorage.getItem('cozy_selected_model') || "[企业cli-0.01]gemini-3.5-flash";
+        let API_MODEL = localStorage.getItem('cozy_selected_model') || "[反重力-0.02]gemini-3.7-flash";
         const ANNIVERSARY_DATE = new Date('2026-09-12T00:00:00+08:00'); // 认识日
         // 【可选】部署 Supabase Edge Function 后填这里，就能把 API Key 藏到服务端。
         // 已填好：对应的函数名是 chat。若函数还没部署，程序会自动回退到直连，不影响使用。
@@ -694,10 +696,16 @@
             API_MODEL = model;
             try { localStorage.setItem('cozy_selected_model', model); } catch (e) {}
         }
-        // 页面加载时恢复下拉选中态
+        // 页面加载时恢复下拉选中态（若保存的模型已不在列表里，就回退到第一个）
         function restoreModelSelect() {
             const sel = document.getElementById('modelSelect');
-            if (sel) sel.value = API_MODEL;
+            if (!sel) return;
+            const has = Array.from(sel.options).some(o => o.value === API_MODEL);
+            if (!has) {
+                API_MODEL = sel.options[0] ? sel.options[0].value : API_MODEL;
+                try { localStorage.setItem('cozy_selected_model', API_MODEL); } catch (e) {}
+            }
+            sel.value = API_MODEL;
         }
 
         // 纪念日计算
