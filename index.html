@@ -220,6 +220,7 @@
         /* 🔊 每条消息的朗读按钮 */
         .speak-btn { background: none; border: none; cursor: pointer; font-size: 12px; opacity: 0.45; padding: 0 2px; margin-left: 4px; vertical-align: middle; }
         .speak-btn:hover { opacity: 1; }
+        .speak-btn.hot { opacity: 1; font-size: 11.5px; background-color: rgba(143, 158, 139, 0.22); border-radius: 12px; padding: 3px 10px; margin-left: 6px; color: var(--text-color); }
         
         .image-preview-container { position: absolute; bottom: 55px; left: 0; background: var(--bg-color); border: 1px solid var(--primary-color); padding: 8px; border-radius: 10px; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 10; }
         .image-preview-container img { max-width: 120px; max-height: 120px; border-radius: 6px; display: block; }
@@ -1850,9 +1851,9 @@ Always keep an extremely gentle, mature and equal tone.
                 const finalReply = applyReplyTokens(replyText);
                 if (!finalReply) throw new Error("收到空白回复");
                 setAvatarLock(true); // 本轮处理完重新上锁：模型只在被明确要求时才能换头像
-                if (wantsVoice) speakRealWithBudget(finalReply);
                 aiBubbleTextEl.innerHTML = messageContentToHtml(finalReply);
-                attachSpeakButton(aiBubbleTextEl, finalReply);
+                if (wantsVoice) markVoiceWanted(aiBubbleTextEl, finalReply);
+                else attachSpeakButton(aiBubbleTextEl, finalReply);
                 if (ttsEnabled) speakText(finalReply);
 
                 const aiMsg = { session_id: currentSessionId, role: "assistant", content: finalReply, time: getNowTimeStr() };
@@ -3536,6 +3537,24 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
             await speakReal(text);
         }
 
+        // 小千想说的那句：挂一个醒目的喇叭（可选自动播放）
+        function getVoiceAutoplay() { try { return localStorage.getItem('cozy_voice_autoplay') === '1'; } catch (e) { return false; } }
+        function setVoiceAutoplay(v) { try { localStorage.setItem('cozy_voice_autoplay', v ? '1' : '0'); } catch (e) {} }
+        function markVoiceWanted(bubbleEl, text) {
+            try {
+                if (!bubbleEl) return;
+                if (bubbleEl.querySelector('.speak-btn')) return;
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'speak-btn hot';
+                b.title = '小千想让你听这句';
+                b.textContent = '📢 听我说';
+                b.onclick = (ev) => { ev.stopPropagation(); speakReal(text); };
+                bubbleEl.appendChild(b);
+                if (getVoiceAutoplay()) speakRealWithBudget(text);
+            } catch (e) {}
+        }
+
         // ---- 🗣️ 声音选择面板 ----
         function openVoicePanel() {
             const panel = document.getElementById('voicePanel');
@@ -3582,6 +3601,11 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
                     <button type="button" class="pill ${cap === 3 ? 'active' : ''}" data-c="3">3 句</button>
                     <button type="button" class="pill ${cap === 5 ? 'active' : ''}" data-c="5">5 句</button>
                 </div>
+                <div style="font-size:12px;opacity:0.7;margin:8px 0 4px;">我想跟你说话时（📢）</div>
+                <div class="pitch-row">
+                    <button type="button" class="pill ${!getVoiceAutoplay() ? 'active' : ''}" data-a="0">先挂喇叭，我自己点</button>
+                    <button type="button" class="pill ${getVoiceAutoplay() ? 'active' : ''}" data-a="1">直接读出来</button>
+                </div>
                 <div class="voice-hint">今天已用 ${voiceUsedToday()} 句 · 随时点任意消息旁的 🔊，我就用真嗓子读给你听<br>当前音色：${escapeMomentHtml(curVoice)}</div>`;
             list.appendChild(realBox);
             const dBtn = realBox.querySelector('#voiceDesignBtn');
@@ -3593,6 +3617,9 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
             });
             realBox.querySelectorAll('.pill[data-c]').forEach(b => {
                 b.onclick = () => { setVoiceCap(parseInt(b.getAttribute('data-c'), 10)); renderVoiceList(); };
+            });
+            realBox.querySelectorAll('.pill[data-a]').forEach(b => {
+                b.onclick = () => { setVoiceAutoplay(b.getAttribute('data-a') === '1'); renderVoiceList(); };
             });
             const rvSave = realBox.querySelector('#realVoiceSave');
             if (rvSave) rvSave.onclick = () => {
