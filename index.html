@@ -560,8 +560,8 @@
         let API_MODEL = localStorage.getItem('cozy_selected_model') || "[企业cli-0.01]gemini-3.5-flash";
         const ANNIVERSARY_DATE = new Date('2026-09-12T00:00:00+08:00'); // 认识日
         // 【可选】部署 Supabase Edge Function 后填这里，就能把 API Key 藏到服务端。
-        // 例如： "https://kejcaijcqlfmtlfxktrk.supabase.co/functions/v1/chat"
-        const EDGE_FN_URL = "";
+        // 已填好：对应的函数名是 chat。若函数还没部署，程序会自动回退到直连，不影响使用。
+        const EDGE_FN_URL = "https://kejcaijcqlfmtlfxktrk.supabase.co/functions/v1/chat";
         // =======================================================
 
         const cdnList = [
