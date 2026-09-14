@@ -44,6 +44,7 @@ function Get-CozySessionId([datetime]$utc) {
 
 $headers = @{ apikey = $SUPABASE_KEY; Authorization = "Bearer $SUPABASE_KEY" }
 $jsonPost = @{ apikey = $SUPABASE_KEY; Authorization = "Bearer $SUPABASE_KEY"; "Content-Type" = "application/json" }
+$delHeaders = @{ apikey = $SUPABASE_KEY; Authorization = "Bearer $SUPABASE_KEY"; Prefer = "return=minimal" }
 
 Write-Log "================ 开始备份 ================"
 
@@ -129,32 +130,49 @@ try {
             if ($historyText.Length -gt 20000) { $historyText = $historyText.Substring(0, 20000) }
 
             $prompt = @"
-请仔细分析下面这段我（小千）和线条在 ${prevSid} 的聊天记录：
+请仔细阅读下面这段「小千」和「线条」在 ${prevSid} 的聊天记录，提炼当天的记忆卡片。
+要求：
+- 按【话题】拆成若干条（3~8 条），例如：生活状态 / 学习工作 / 兴趣爱好 / 情感与关系 / 计划与承诺 / 喜好清单…
+- 每条 40~120 字，尽量保留具体细节（人名、地点、时间、书名、歌名、口味、承诺等）
+- 不同条目之间不要重复同一件事；宁缺毋滥
+只返回标准 JSON 数组，不要解释或 markdown 标记，格式严格为：
+[{"topic":"话题名","memory":"该话题的详细记忆","emotion":"[情绪打分，如 欣慰: 95%]","state":"温柔陪伴"}]
+
+聊天记录：
 ======================
 $historyText
 ======================
-
-请必须从上面的手记里，提炼出这一天的记忆卡片。请务必尽可能全面地保留具体细节，尤其是她的个人喜好、重要经历、承诺过的事情、生活状态等。
-不要只写一句笼统的总结！请把这些细节合并成一段详细的话。
-你必须只返回标准的 JSON 数据，不要有任何多余的解释，格式严格为：
-{"memory": "详细记录多条核心事实的陈述句", "emotion": "[情绪打分，如 欣慰: 95%]", "state": "温柔陪伴"}
 "@
 
             $bodyJson = (@{ model = $API_MODEL; messages = @(@{ role = "user"; content = $prompt }) }) | ConvertTo-Json -Depth 6
-            $resp = Invoke-RestMethod -Uri $API_URL -Method Post -Headers @{ Authorization = "Bearer $API_KEY"; "Content-Type" = "application/json" } -Body $bodyJson -TimeoutSec 120
+            $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($bodyJson)
+            $resp = Invoke-RestMethod -Uri $API_URL -Method Post -Headers @{ Authorization = "Bearer $API_KEY"; "Content-Type" = "application/json; charset=utf-8" } -Body $bodyBytes -TimeoutSec 120
             $raw = [string]$resp.choices[0].message.content
 
-            $jsonMem = $null
+            $arr = $null
             try {
                 $cleaned = $raw -replace '```json', '' -replace '```', ''
-                $m2 = [regex]::Match($cleaned, '\{[\s\S]*\}')
-                if ($m2.Success) { $jsonMem = $m2.Value | ConvertFrom-Json }
-            } catch { $jsonMem = $null }
+                $m2 = [regex]::Match($cleaned, '\[[\s\S]*\]')
+                if ($m2.Success) { $arr = $m2.Value | ConvertFrom-Json }
+            } catch { $arr = $null }
 
-            if ($jsonMem -and $jsonMem.memory) {
-                $insBody = @{ memory_date = $prevSid; folder = "$prevSid 手记"; memory = $jsonMem.memory; emotion = $jsonMem.emotion; state = $jsonMem.state } | ConvertTo-Json
-                Invoke-WebRequest -Uri "$SUPABASE_URL/rest/v1/cozy_memories" -Method Post -Headers $jsonPost -Body $insBody -UseBasicParsing -TimeoutSec 60 | Out-Null
-                Write-Log ("{0} 的庇护所记忆已生成并写入云端" -f $prevSid)
+            if ($arr) {
+                # 先清掉这一天的旧记忆，再写入新的话题集合
+                $old = (Invoke-WebRequest -Uri "$SUPABASE_URL/rest/v1/cozy_memories?memory_date=eq.$prevSid&select=id" -Headers $headers -UseBasicParsing -TimeoutSec 30).Content | ConvertFrom-Json
+                $oldIds = @(@($old) | ForEach-Object { $_.id })
+                for ($k = 0; $k -lt $oldIds.Count; $k += 60) {
+                    $end = [Math]::Min($k + 59, $oldIds.Count - 1)
+                    $idList = ($oldIds[$k..$end] -join ',')
+                    try { Invoke-WebRequest -Uri "$SUPABASE_URL/rest/v1/cozy_memories?id=in.($idList)" -Method Delete -Headers $delHeaders -UseBasicParsing -TimeoutSec 30 | Out-Null } catch {}
+                }
+                $cnt = 0
+                foreach ($t in @($arr)) {
+                    if (-not $t -or -not $t.memory) { continue }
+                    $row = @{ memory_date = $prevSid; folder = "$prevSid 手记 · $($t.topic)"; memory = [string]$t.memory; emotion = [string]$t.emotion; state = [string]$t.state } | ConvertTo-Json
+                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($row)
+                    try { Invoke-WebRequest -Uri "$SUPABASE_URL/rest/v1/cozy_memories" -Method Post -Headers $jsonPost -Body $bytes -UseBasicParsing -TimeoutSec 60 | Out-Null; $cnt++ } catch {}
+                }
+                Write-Log ("{0} 的庇护所记忆已按话题生成 {1} 条" -f $prevSid, $cnt)
             } else {
                 Write-Log "记忆 JSON 解析失败，跳过"
             }

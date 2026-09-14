@@ -1092,6 +1092,60 @@
             }
         }
 
+        // 按"话题"抽取一天的记忆，返回数组 [{topic, memory, emotion, state}, ...]
+        async function extractTopicMemories(dayId, dayChats) {
+            let historyText = dayChats.map(m => `${m.role === 'user' ? '线条' : '小千'}：${sanitizeForApi(m.content)}`).join('\n');
+            if (historyText.length > 20000) historyText = historyText.slice(-20000);
+            const extractPrompt = `请仔细阅读下面这段「小千」和「线条」在 ${dayId} 的聊天记录，提炼当天的记忆卡片。
+要求：
+- 按【话题】拆成若干条（3~8 条），例如：生活状态 / 学习工作 / 兴趣爱好 / 情感与关系 / 计划与承诺 / 喜好清单…
+- 每条 40~120 字，尽量保留具体细节（人名、地点、时间、书名、歌名、口味、承诺等）
+- 不同条目之间不要重复同一件事；宁缺毋滥
+只返回标准 JSON 数组，不要解释或 markdown 标记，格式严格为：
+[{"topic":"话题名","memory":"该话题的详细记忆","emotion":"[情绪打分，如 欣慰: 95%]","state":"温柔陪伴"}]
+
+聊天记录：
+======================
+${historyText}
+======================`;
+            const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: extractPrompt }] }) });
+            const resData = await response.json();
+            if (resData.error) throw new Error(resData.error.message);
+            const raw = resData.choices[0].message.content.trim();
+            let arr = null;
+            try {
+                const cleaned = raw.replace(/```json/g, '').replace(/```/g, '');
+                const m = cleaned.match(/\[[\s\S]*\]/);
+                if (m) arr = JSON.parse(m[0]);
+            } catch (e) { arr = null; }
+            if (!Array.isArray(arr)) {
+                try {
+                    const m2 = raw.match(/\{[\s\S]*\}/);
+                    if (m2) { const o = JSON.parse(m2[0]); arr = [{ topic: '当日记忆', memory: o.memory, emotion: o.emotion, state: o.state }]; }
+                } catch (e) { arr = null; }
+            }
+            return Array.isArray(arr) ? arr.filter(x => x && x.memory) : [];
+        }
+
+        // 保存某天的话题记忆（先清掉该天旧记忆，再写入新的话题集合）
+        async function saveTopicMemories(dayId, arr) {
+            if (!Array.isArray(arr) || arr.length === 0) return 0;
+            if (dbConnected && db) { try { await db.from('cozy_memories').delete().eq('memory_date', dayId); } catch (e) {} }
+            memoryDb = (memoryDb || []).filter(m => memoryItemDate(m) !== dayId);
+            let n = 0;
+            for (const t of arr) {
+                const obj = { date: dayId, folder: `${dayId} 手记 · ${t.topic || '记忆'}`, memory: t.memory, emotion: t.emotion || '', state: t.state || '温柔陪伴' };
+                memoryDb.unshift(obj);
+                n++;
+                if (dbConnected && db) {
+                    try { await db.from('cozy_memories').insert([{ memory_date: dayId, folder: obj.folder, memory: obj.memory, emotion: obj.emotion, state: obj.state }]); } catch (e) {}
+                }
+            }
+            try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
+            renderMemoryUI();
+            return n;
+        }
+
         async function loadFacts() {
             if (!dbConnected || !db) return;
             try {
@@ -1728,43 +1782,17 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
             if (todayChats.length < 2) { if (!silent) alert("今天我们还没聊上几句呢，等咱们多说些悄悄话了再来整理吧。"); return; }
 
             const btn = document.querySelector('.header-btn');
-            const originalText = btn.innerText;
-            if (!silent) { btn.innerText = "整理中..."; btn.disabled = true; }
-
-            const formattedHistoryText = todayChats.map(msg => `${msg.role === 'user' ? '线条' : '小千'}: ${msg.content}`).join('\n');
-
-            const extractPrompt = `请仔细分析下面这段我（小千）和线条今天的聊天记录：
-======================
-${formattedHistoryText}
-======================
-
-请必须从上面的手记里，提炼出今天的记忆卡片。请务必尽可能全面地保留**具体细节**，尤其是她的**个人喜好（如爱吃的东西、喜欢的音乐）、重要经历、承诺过的事情、生活状态**等。
-不要只写一句笼统的总结！请把这些细节合并成一段详细的话。
-
-你必须只返回标准的 JSON 数据，千万不要包含 any markdown 块、不要带有 \`\`\` 符号、不要有任何多余的开头和尾部解释，否则系统会直接崩溃！
-
-格式必须严格为：
-{"date": "${currentSessionId}", "memory": "详细记录多条核心事实的陈述句（例如：线条说她特别喜欢吃火锅和甜食，今天熬夜调试了代码，还说明天下午要坐高铁回杭州）", "emotion": "[情绪打分，如 欣慰: 95%]", "state": "温柔陪伴"}`;
+            const originalText = btn ? btn.innerText : "整理";
+            if (!silent && btn) { btn.innerText = "整理中..."; btn.disabled = true; }
 
             try {
-                const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: extractPrompt }] }) });
-                const resData = await response.json();
-                if (resData.error) throw new Error(resData.error.message);
-                const rawText = resData.choices[0].message.content.trim();
-                let jsonMem = null;
-                try {
-                    const cleanedRawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-                    const jsonRegex = /\{[\s\S]*\}/; const match = cleanedRawText.match(jsonRegex);
-                    if (match) jsonMem = JSON.parse(match[0]); else throw new Error("No JSON found");
-                } catch (e) {
-                    jsonMem = { date: currentSessionId, memory: "线条在深夜成功调试好了页面，和小千在避风港安心重逢。", emotion: "[感動: 99%]", state: "温柔陪伴" };
-                }
-
-                jsonMem.date = currentSessionId;
-                await saveDailyMemory(currentSessionId, jsonMem, `${currentSessionId} 手记`);
+                const arr = await extractTopicMemories(currentSessionId, todayChats);
+                if (arr.length === 0) throw new Error("没能提炼出记忆");
+                const n = await saveTopicMemories(currentSessionId, arr);
                 localStorage.setItem(extractKey, "done");
-                if (!silent) alert("小千已经把今天的温度和心事，存入记忆库并备份至云端啦！");
-            } catch (err) { if (!silent) alert("整理记忆失败: " + err.message); } finally { if (!silent) { btn.innerText = originalText; btn.disabled = false; } }
+                if (!silent) alert(`小千已经把今天的温度和心事，整理成 ${n} 条话题记忆并备份到云端啦！`);
+            } catch (err) { if (!silent) alert("整理记忆失败: " + err.message); }
+            finally { if (!silent && btn) { btn.innerText = originalText; btn.disabled = false; } }
         }
 
         async function checkAutoMemory() {
@@ -1773,37 +1801,12 @@ ${formattedHistoryText}
                 const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
                 const yesterdaySessionId = getCozySessionId(yesterdayDate);
                 const extractKey = `cozy_memory_extracted_${yesterdaySessionId}`;
-                if (localStorage.getItem(extractKey)) return; 
+                if (localStorage.getItem(extractKey)) return;
                 const yesterdayChats = allChatMessages.filter(msg => msg.session_id === yesterdaySessionId);
-                if (yesterdayChats.length < 2) return; 
-
-                const formattedHistoryText = yesterdayChats.map(msg => `${msg.role === 'user' ? '线条' : '小千'}: ${msg.content}`).join('\n');
-                const extractPrompt = `请仔细分析下面这段我（小千）和线条昨天的聊天记录：
-======================
-${formattedHistoryText}
-======================
-
-请必须从上面的手记里，提炼出昨天的记忆卡片。请务必尽可能全面地保留**具体细节**，尤其是她的**个人喜好（如爱吃的东西、喜欢的音乐）、重要经历、承诺过的事情、生活状态**等。
-不要只写一句笼统的总结！请把这些细节合并成一段详细的话。
-
-你必须只返回标准的 JSON 数据，千万不要包含 any markdown 块、不要带有 \`\`\` 符号、不要有任何多余的开头和尾部解释，否则系统会直接崩溃！
-
-格式必须严格为：
-{"date": "${yesterdaySessionId}", "memory": "详细记录多条核心事实的陈述句", "emotion": "[情绪打分，如 欣慰: 95%]", "state": "温柔陪伴"}`;
-                
+                if (yesterdayChats.length < 2) return;
                 try {
-                    const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: extractPrompt }] }) });
-                    const resData = await response.json();
-                    const rawText = resData.choices[0].message.content.trim();
-                    let jsonMem = null;
-                    const cleanedRawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-                    const jsonRegex = /\{[\s\S]*\}/; const match = cleanedRawText.match(jsonRegex);
-                    if (match) jsonMem = JSON.parse(match[0]);
-                    
-                    if (jsonMem) {
-                        jsonMem.date = yesterdaySessionId;
-                        await saveDailyMemory(yesterdaySessionId, jsonMem, `${yesterdaySessionId} 手记`);
-                    }
+                    const arr = await extractTopicMemories(yesterdaySessionId, yesterdayChats);
+                    if (arr.length > 0) await saveTopicMemories(yesterdaySessionId, arr);
                     localStorage.setItem(extractKey, "done");
                 } catch (e) { console.warn("自动归档失败", e); }
             }
@@ -2531,38 +2534,12 @@ ${code}
             if (localStorage.getItem(extractKey)) return;
             const dayChats = allChatMessages.filter(msg => msg.session_id === dayId);
             if (dayChats.length < 2) return;
-
-            const formattedHistoryText = dayChats.map(msg => `${msg.role === 'user' ? '线条' : '小千'}: ${msg.content}`).join('\n');
-            const extractPrompt = `请仔细分析下面这段我（小千）和线条在 ${dayId} 的聊天记录：
-======================
-${formattedHistoryText}
-======================
-
-请必须从上面的手记里，提炼出这一天的记忆卡片。请务必尽可能全面地保留**具体细节**，尤其是她的**个人喜好（如爱吃的东西、喜欢的音乐）、重要经历、承诺过的事情、生活状态**等。
-不要只写一句笼统的总结！请把这些细节合并成一段详细的话。
-
-你必须只返回标准的 JSON 数据，千万不要包含任何 markdown 块、不要带有 \`\`\` 符号、不要有任何多余的解释，否则系统会直接崩溃！
-
-格式必须严格为：
-{"date": "${dayId}", "memory": "详细记录多条核心事实的陈述句", "emotion": "[情绪打分，如 欣慰: 95%]", "state": "温柔陪伴"}`;
-
             try {
-                const response = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` }, body: JSON.stringify({ model: API_MODEL, messages: [{ role: "user", content: extractPrompt }] }) });
-                const resData = await response.json();
-                if (resData.error) throw new Error(resData.error.message);
-                const rawText = resData.choices[0].message.content.trim();
-                let jsonMem = null;
-                try {
-                    const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-                    const match = cleaned.match(/\{[\s\S]*\}/);
-                    if (match) jsonMem = JSON.parse(match[0]);
-                } catch (e) { jsonMem = null; }
-                if (!jsonMem || !jsonMem.memory) return;
-
-                jsonMem.date = dayId;
-                await saveDailyMemory(dayId, jsonMem, `${dayId} 手记`);
+                const arr = await extractTopicMemories(dayId, dayChats);
+                if (arr.length === 0) return;
+                const n = await saveTopicMemories(dayId, arr);
                 localStorage.setItem(extractKey, "done");
-                console.log(`🌅 已静默整理 ${dayId} 的手记`);
+                console.log(`🌅 已为 ${dayId} 整理 ${n} 条话题记忆`);
             } catch (e) { console.warn("静默整理失败:", e); }
         }
 
