@@ -596,6 +596,8 @@
         let factsDb = [];
         let avatarXiaoqian = "";
         let avatarUser = "";
+        // 本轮消息里线条是否手动上传了头像（用于阻止模型再用 [SET_AVATAR] 覆盖掉）
+        let userSetAvatarThisTurn = false;
         try { avatarXiaoqian = localStorage.getItem('cozy_avatar_xiaoqian') || ""; } catch (e) {}
         try { avatarUser = localStorage.getItem('cozy_avatar_user') || ""; } catch (e) {}
 
@@ -1500,6 +1502,7 @@ ${historyText}
             const input = document.getElementById('userInput');
             const btn = document.getElementById('sendBtn');
             let text = input.value.trim();
+            userSetAvatarThisTurn = false;
             
             if (!text && !pendingImageBase64) return;
 
@@ -1542,14 +1545,18 @@ ${historyText}
 
             btn.innerText = "发送中...";
 
-            // 如果线条把图片说成“头像”，就顺手为小千换上
+            // 如果线条把图片说成“头像”，就用这张图给小千换上（并锁住本轮，防止模型用 [SET_AVATAR] 覆盖）
             const sentAvatarMatch = text.match(/\[LinesImage:\s*([\s\S]+?)\]/);
             if (sentAvatarMatch && /头像/.test(text)) {
-                avatarXiaoqian = sentAvatarMatch[1].trim();
-                try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
-                saveAvatarsToCloud();
-                refreshAvatarsInDom();
-                appendSystemMessage("🖼️ 小千换上了你发给她的新头像～");
+                userSetAvatarThisTurn = true;
+                const rawAv = sentAvatarMatch[1].trim();
+                appendSystemMessage("🖼️ 正在把小千的头像换成你发的这张…");
+                makeSquareAvatar(rawAv, 240).then(sq => {
+                    avatarXiaoqian = sq;
+                    try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
+                    saveAvatarsToCloud();
+                    refreshAvatarsInDom();
+                });
             }
 
             const userMsg = { session_id: currentSessionId, role: "user", content: text, time: getNowTimeStr() };
@@ -1712,7 +1719,12 @@ You must always use extremely gentle, mature, and equal tone to talk as an AI fr
                     }
                 }
 
-                const finalReply = applyReplyTokens(fullReplyText.trim());
+                let replyText = fullReplyText.trim();
+                if (userSetAvatarThisTurn) {
+                    // 线条本轮已手动换成上传的头像，忽略模型自带的 [SET_AVATAR]，避免覆盖
+                    replyText = replyText.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
+                }
+                const finalReply = applyReplyTokens(replyText);
                 if (!finalReply) throw new Error("收到空白回复");
                 aiBubbleTextEl.innerHTML = messageContentToHtml(finalReply);
 
@@ -2112,6 +2124,28 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
         function avatarInnerHtml(url, label) {
             if (!url) return label;
             return `<img src="${url}" alt="${label}" referrerpolicy="no-referrer" loading="lazy" onerror="(function(el){var d=el.parentNode;if(d){d.textContent='${label}';}})(this)">`;
+        }
+
+        // 把一张图裁成正方形头像（居中裁切），返回 Promise<dataURL>
+        function makeSquareAvatar(dataUrl, size) {
+            size = size || 240;
+            return new Promise((resolve) => {
+                try {
+                    const img = new Image();
+                    img.onload = function () {
+                        try {
+                            const min = Math.min(img.width, img.height);
+                            const sx = (img.width - min) / 2, sy = (img.height - min) / 2;
+                            const canvas = document.createElement('canvas');
+                            canvas.width = size; canvas.height = size;
+                            canvas.getContext('2d').drawImage(img, sx, sy, min, min, 0, 0, size, size);
+                            resolve(canvas.toDataURL('image/jpeg', 0.9));
+                        } catch (e) { resolve(dataUrl); }
+                    };
+                    img.onerror = function () { resolve(dataUrl); };
+                    img.src = dataUrl;
+                } catch (e) { resolve(dataUrl); }
+            });
         }
 
         function getAvatarHtml(role) {
