@@ -4,6 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>一盏小灯</title>
+    <!-- 📱 PWA：可以“安装”到手机桌面，全屏打开 -->
+    <link rel="manifest" href="./manifest.webmanifest">
+    <meta name="theme-color" content="#F5F2EB">
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="一盏小灯">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
@@ -3915,6 +3923,15 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
         setInterval(function () { checkNudge(); checkTodoReminders(); }, 60000);
         initTTS();
         initRemindMaster();
+
+        // 📱 注册 PWA Service Worker（离线缓存 + 可安装到桌面）
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('./sw.js').catch(function (e) {
+                    console.warn('Service Worker 注册失败（不影响使用）:', e.message);
+                });
+            });
+        }
         // 首次用户点击时，再温和地补一次通知权限请求（移动端更可靠）
         document.addEventListener('click', function () { requestNotificationPermission(); }, { once: true });
     </script>
