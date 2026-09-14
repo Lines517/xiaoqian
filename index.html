@@ -232,6 +232,8 @@
         .todo-item .delete-btn:hover { opacity: 1; }
         .todo-item .edit-btn { background: none; border: none; color: var(--primary-color); font-size: 14px; cursor: pointer; opacity: 0.55; padding: 0 4px; }
         .todo-item .edit-btn:hover { opacity: 1; }
+        .todo-item .bell-btn { background: none; border: none; font-size: 13px; cursor: pointer; opacity: 0.85; padding: 0 3px; }
+        .todo-item .bell-btn.muted { opacity: 0.3; }
         .todo-actions { display: flex; align-items: center; }
         .todo-due { font-size: 11px; opacity: 0.65; }
         .todo-due.overdue { color: #d9822b; opacity: 1; font-weight: bold; }
@@ -499,6 +501,7 @@
             <div class="app-header">
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>碎碎念 · 日程</h2>
+                <button type="button" id="remindToggleBtn" onclick="toggleRemindMaster()" title="到点提醒开关" style="margin-left:auto; background:none; border:none; font-size:17px; cursor:pointer; opacity:0.8;">🔔</button>
             </div>
             <div class="handbook-list" id="todoListContainer" style="flex:1; overflow-y:auto;"></div>
             <div class="todo-input-box">
@@ -1456,7 +1459,7 @@ ${historyText}
                 if (cloudTodos && cloudTodos.length > 0) {
                     const mergedTodos = [...todoList];
                     const tKeys = new Set(todoList.map(t => String(t.id)));
-                    cloudTodos.forEach(c => { if (!tKeys.has(String(c.id))) { mergedTodos.push({ id: c.id, content: c.content, is_completed: c.is_completed, dueAt: c.due_at || '' }); tKeys.add(String(c.id)); } });
+                    cloudTodos.forEach(c => { if (!tKeys.has(String(c.id))) { mergedTodos.push({ id: c.id, content: c.content, is_completed: c.is_completed, dueAt: c.due_at || '', remind: c.remind !== false }); tKeys.add(String(c.id)); } });
                     todoList = mergedTodos; localStorage.setItem('cozy_local_todos', JSON.stringify(todoList)); renderTodoUI();
                 }
 
@@ -2097,6 +2100,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                         <span>${escapeMomentHtml(item.content)}${timeHtml}</span>
                     </div>
                     <div class="todo-actions">
+                        ${isNaN(ms) ? '' : `<button class="bell-btn ${item.remind === false ? 'muted' : ''}" title="${item.remind === false ? '这条不提醒（点此开启）' : '这条会提醒（点此关闭）'}" onclick="toggleTodoRemind(${item.id})">${item.remind === false ? '🔕' : '🔔'}</button>`}
                         <button class="edit-btn" title="改内容 / 改时间" onclick="editTodoItem(${item.id})">✎</button>
                         <button class="delete-btn" onclick="deleteTodoItem(${item.id})">×</button>
                     </div>`;
@@ -2104,14 +2108,16 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             });
         }
 
-        // 写回云端（若表里还没有 due_at 列，自动降级为不带时间保存）
+        // 写回云端（逐级降级：due_at/remind 列不存在时也能存下基础字段）
         async function syncTodoToCloud(item) {
             if (!dbConnected || !db) return;
-            const full = { id: item.id, content: item.content, is_completed: !!item.is_completed, due_at: item.dueAt || null };
-            const lite = { id: item.id, content: item.content, is_completed: !!item.is_completed };
+            const base = { id: item.id, content: item.content, is_completed: !!item.is_completed };
+            const withDue = Object.assign({}, base, { due_at: item.dueAt || null });
+            const full = Object.assign({}, withDue, { remind: item.remind !== false });
             try {
-                const { error } = await db.from('cozy_todo').upsert([full]);
-                if (error) { await db.from('cozy_todo').upsert([lite]); }
+                let r = await db.from('cozy_todo').upsert([full]);
+                if (r.error) r = await db.from('cozy_todo').upsert([withDue]);
+                if (r.error) r = await db.from('cozy_todo').upsert([base]);
             } catch (e) { console.warn("日程同步云端失败:", e.message); }
         }
 
@@ -2124,7 +2130,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             if (input) input.value = "";
             const dueVal = dueInput && dueInput.value;
             const dms = bjLocalToMs(dueVal);
-            const tempItem = { id: Date.now(), content: text, is_completed: false, dueAt: isNaN(dms) ? '' : new Date(dms).toISOString(), reminded: false };
+            const tempItem = { id: Date.now(), content: text, is_completed: false, dueAt: isNaN(dms) ? '' : new Date(dms).toISOString(), reminded: false, remind: true };
             todoList.push(tempItem);
             persistTodos();
             renderTodoUI();
@@ -2133,8 +2139,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
         }
 
         function editTodoItem(id) { editingTodoId = id; renderTodoUI(); }
-        function cancelTodoEdit() { editingTodoId = null; renderTodoUI(); }
-        async function saveTodoEdit(id) {
+        function cancelTodoEdit() { editingTodoId = null; renderTodoUI(); }        async function saveTodoEdit(id) {
             const item = todoList.find(t => String(t.id) === String(id));
             if (!item) return;
             const cIn = document.getElementById('todoEditContent');
@@ -2148,6 +2153,37 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             persistTodos();
             renderTodoUI();
             await syncTodoToCloud(item);
+        }
+
+        // ---- 到点提醒的可选开关 ----
+        let remindMasterOn = true;
+        function initRemindMaster() {
+            try {
+                const v = localStorage.getItem('cozy_remind_on');
+                remindMasterOn = (v === null) ? true : v === '1';
+            } catch (e) {}
+            updateRemindToggleBtn();
+        }
+        function updateRemindToggleBtn() {
+            const b = document.getElementById('remindToggleBtn');
+            if (!b) return;
+            b.textContent = remindMasterOn ? '🔔' : '🔕';
+            b.title = remindMasterOn ? '到点提醒：已开启（点此全部关闭）' : '到点提醒：已关闭（点此开启）';
+        }
+        function toggleRemindMaster() {
+            remindMasterOn = !remindMasterOn;
+            try { localStorage.setItem('cozy_remind_on', remindMasterOn ? '1' : '0'); } catch (e) {}
+            updateRemindToggleBtn();
+        }
+        // 单条日程的提醒开关
+        function toggleTodoRemind(id) {
+            const item = todoList.find(t => String(t.id) === String(id));
+            if (!item) return;
+            item.remind = item.remind === false ? true : false;
+            item.reminded = false;
+            persistTodos();
+            renderTodoUI();
+            syncTodoToCloud(item);
         }
 
         // 勾选备忘录（自动删除）
@@ -2179,9 +2215,10 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             }
         }
 
-        // 到点提醒：每分钟检查一次（过期 6 小时内、且未提醒过的才提醒）
+        // 到点提醒：每分钟检查一次（全局开关开、该条开着、过期 6 小时内、且未提醒过）
         let todoReminderBusy = false;
         async function checkTodoReminders() {
+            if (!remindMasterOn) return;
             if (todoReminderBusy) return;
             todoReminderBusy = true;
             try {
@@ -2190,6 +2227,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                 for (const item of todoList) {
                     const ms = todoDueMs(item);
                     if (isNaN(ms) || item.is_completed || item.reminded) continue;
+                    if (item.remind === false) continue;
                     if (now >= ms && now - ms < 6 * 3600 * 1000) {
                         item.reminded = true;
                         changed = true;
@@ -3363,6 +3401,7 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
         // 后台定时：每分钟检查 主动消息 + 日程提醒
         setInterval(function () { checkNudge(); checkTodoReminders(); }, 60000);
         initTTS();
+        initRemindMaster();
         // 首次用户点击时，再温和地补一次通知权限请求（移动端更可靠）
         document.addEventListener('click', function () { requestNotificationPermission(); }, { once: true });
     </script>
