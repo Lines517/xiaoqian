@@ -1790,11 +1790,11 @@ ${historyText}
                 catch(e) { console.error("❌ 发送用户消息失败（请检查 Supabase RLS 权限）:", e.message); }
             }
 
-            // 🚀 上下文只带「今天 + 昨天」两天，且最多最近 80 条，避免记录过多导致请求变慢
+            // 🚀 上下文：今天最近 60 条 + 昨天最后 40 条（保证昨天不会被今天挤掉）
             const yesterdaySid = getCozySessionId(new Date(Date.now() - 24 * 60 * 60 * 1000));
-            const contextChats = allChatMessages
-                .filter(msg => msg.session_id === currentSessionId || msg.session_id === yesterdaySid)
-                .slice(-80);
+            const todayMsgs = allChatMessages.filter(msg => msg.session_id === currentSessionId).slice(-60);
+            const yestMsgs = allChatMessages.filter(msg => msg.session_id === yesterdaySid).slice(-40);
+            const contextChats = [...yestMsgs, ...todayMsgs];
             const apiMessages = contextChats.map(msg => ({ role: msg.role, content: sanitizeForApi(msg.content) }));
 
             // 🚀 注入备忘录和书单
@@ -1873,6 +1873,7 @@ ${historyText}
 - 聊天记录或记忆里出现的其他时间，都只是"过去发生的事"；不确定时宁可不说时间，也不要猜错。
 - 你们的"聊天日"以凌晨 5 点为界：0:00–5:00 说的话算作前一天。所以如果日期和直觉不同，仍以上面这行为准。
 【当前天气】：${currentWeatherInfo}（请根据天气情况自然地关心对方，比如下雨提醒带伞，降温提醒添衣）
+【上下文说明】：下面给你的对话里，**最前面那部分是昨天（${yesterdaySid}）聊的**，后面才是今天。昨天说过的内容要记住，不要当成没见过、也不要说"你没跟我说过"。
 
 【行为准则】：
 你看不见对方，也摸不到对方。严禁在对话中使用任何身体动作描写（如*轻笑*、*摸摸头*、*拉手*等），也严禁脑补、捏造对方现实中的任何物理细节（如对方手中的杯子、房间的布置、行李箱里的东西等）。
@@ -2121,7 +2122,7 @@ Always keep an extremely gentle, mature and equal tone.
                 const head = document.createElement('div');
                 head.style.cssText = "display:flex; align-items:center; gap:6px; font-size:12px; opacity:0.8; margin-bottom:5px;";
                 head.innerHTML = `<span style="font-weight:bold;">📁 ${d}</span><span style="opacity:0.55; font-size:11px;">（${items.length} 条）</span>`;
-                if (items.length > 1 && d !== '核心设定') {
+                if (items.length > 1 && d !== '核心设定' && d !== '小千自述') {
                     const btn = document.createElement('button');
                     btn.innerText = "🪄 整理";
                     btn.style.cssText = "margin-left:auto; font-size:10.5px; padding:2px 8px; border:none; border-radius:8px; background:rgba(143,158,139,0.18); color:var(--text-color); cursor:pointer;";
@@ -2220,8 +2221,9 @@ Always keep an extremely gentle, mature and equal tone.
 
         // 把某一天的记忆条目归一化到 yyyy-MM-dd
         function memoryItemDate(m) {
-            // 人设类记忆（folder 以“核心”开头）单独归为一组，不参与按日整理
-            if (String(m.folder || '').startsWith('核心')) return '核心设定';
+            const folder = String(m.folder || '');
+            if (folder.startsWith('核心·小千')) return '小千自述';   // 小千的自述单独一组
+            if (folder.startsWith('核心')) return '核心设定';        // 人设类不参与按日整理
             let d = m.date || '';
             if (!d && m.folder) {
                 const mm = String(m.folder).match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
@@ -2235,7 +2237,7 @@ Always keep an extremely gentle, mature and equal tone.
 
         // 把某一天的多条记忆，按"话题"重新组织成若干条独立记忆（保留多条、去掉重复）
         async function organizeMemoriesForDay(dateStr, silent) {
-            if (dateStr === '核心设定') { if (!silent) alert("「核心设定」是你和我的身份，不会被自动整理～"); return 0; }
+            if (dateStr === '核心设定' || dateStr === '小千自述') { if (!silent) alert("「核心设定 / 小千自述」是你和我的身份，不会被自动整理～"); return 0; }
             const items = (memoryDb || []).filter(m => memoryItemDate(m) === dateStr);
             if (items.length <= 1) { if (!silent) alert("这一天只有一条记忆，无需整理～"); return 0; }
             if (!silent && !confirm(`把 ${dateStr} 的 ${items.length} 条记忆，按话题重新整理成几条不重复的记忆？\n（会删掉旧的零散条目，换成按话题划分的版本）`)) return 0;
@@ -2292,7 +2294,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
         // 一键整理所有"同一天多条"的记忆
         async function organizeAllMemories() {
             const byDate = {};
-            (memoryDb || []).forEach(m => { const d = memoryItemDate(m); if (d === '核心设定') return; (byDate[d] = byDate[d] || []).push(m); });
+            (memoryDb || []).forEach(m => { const d = memoryItemDate(m); if (d === '核心设定' || d === '小千自述') return; (byDate[d] = byDate[d] || []).push(m); });
             const multiDays = Object.keys(byDate).filter(d => byDate[d].length > 1);
             if (multiDays.length === 0) { alert("没有需要整理的多条记忆～"); return; }
             if (!confirm(`有 ${multiDays.length} 天存在多条记忆，逐天按话题整理？`)) return;
