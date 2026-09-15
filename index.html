@@ -583,6 +583,16 @@
                 <button type="button" class="todo-add-btn" onclick="addBookItem()">加</button>
             </div>
 
+            <!-- 📥 教材/资料 -->
+            <div class="todo-due-row" style="margin-top:6px;">
+                <label>📥 教材资料</label>
+                <button type="button" class="clear-btn" onclick="document.getElementById('docFileInput').click()">导入文件</button>
+                <button type="button" class="clear-btn" onclick="pasteDocText()">粘贴文字</button>
+                <input type="file" id="docFileInput" accept=".pdf,image/*,text/plain" multiple style="display:none" onchange="handleDocFiles(event)">
+            </div>
+            <div id="docStatus" class="voice-hint" style="padding:2px 4px;"></div>
+            <div class="handbook-list" id="docListContainer"></div>
+
             <!-- 📖 共读笔记面板 -->
             <div class="search-results-overlay" id="readingNotesPanel">
                 <div class="search-results-header">
@@ -806,6 +816,7 @@
             if (appId === 'self') renderSelfUI();
             if (appId === 'diary') renderDiaryUI();
             if (appId === 'people') renderPeopleUI();
+            if (appId === 'books') loadDocs();
             if (appId === 'memory') renderMemoryUI();
         }
 
@@ -1848,8 +1859,12 @@ ${historyText}
                 const hits = await searchMemoryVectors(text, 6);
                 const good = (hits || []).filter(h => h && h.text && Number(h.similarity) > 0.32);
                 if (good.length > 0) {
-                    const lines = good.map(h => `- [${h.mem_date || ''}] ${String(h.text).slice(0, 140)}`).join('\n');
-                    vecPrompt = `\n【语义唤起的旧内容（可能是以前某天的记忆或你们的原话，按相关度从全部历史里挑出来的）】：\n${lines}`;
+                    const lines = good.map(h => {
+                        const tag = h.folder ? `【${h.folder}】` : '';
+                        const dt = h.mem_date ? `[${h.mem_date}]` : '';
+                        return `- ${tag}${dt} ${String(h.text).slice(0, 200)}`;
+                    }).join('\n');
+                    vecPrompt = `\n【语义唤起的旧内容（记忆 / 你们的原话 / 她导入的教材原文，按相关度挑出来的）】：\n${lines}\n（凡是标着【教材·…】的，是她导入的书本原文：请**严格基于那段原文**回答，不要自己发挥；能看出页码/章节就一起说。）`;
                 }
             } catch (e) {}
 
@@ -2745,6 +2760,183 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             } catch (e) { console.warn("日程提醒生成失败:", e); }
             if (!text) text = `「${item.content}」到时间啦，别忘了。`;
             deliverAssistantMessage(text, true);
+        }
+
+        // ================= 【📥 教材 / 资料导入】 =================
+        let docsList = [];
+
+        function setDocStatus(msg) {
+            const el = document.getElementById('docStatus');
+            if (el) el.textContent = msg || '';
+        }
+
+        function chunkText(text, size, overlap) {
+            size = size || 500; overlap = overlap || 80;
+            const clean = String(text || '').replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+            const out = [];
+            let i = 0;
+            while (i < clean.length && out.length < 900) {
+                out.push(clean.slice(i, i + size));
+                i += (size - overlap);
+            }
+            return out.filter(s => s.trim().length > 20);
+        }
+
+        // 懒加载 pdf.js（只在你第一次导入 PDF 时才下载）
+        let pdfJsReady = null;
+        function ensurePdfJs() {
+            if (pdfJsReady) return pdfJsReady;
+            const urls = [
+                'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+            ];
+            pdfJsReady = (async () => {
+                for (const u of urls) {
+                    try {
+                        await loadScript(u);
+                        if (window.pdfjsLib) {
+                            try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; } catch (e) {}
+                            return window.pdfjsLib;
+                        }
+                    } catch (e) { console.warn('pdf.js 加载失败:', u); }
+                }
+                throw new Error('pdf.js 加载不了（网络问题）');
+            })();
+            return pdfJsReady;
+        }
+
+        async function handleDocFiles(event) {
+            const files = Array.from(event.target.files || []);
+            event.target.value = '';
+            if (!files.length) return;
+            if (!dbConnected || !db) { setDocStatus('❌ 还没连上云端'); return; }
+            for (const f of files) {
+                try {
+                    if (/\.pdf$/i.test(f.name)) await importPdf(f);
+                    else if (f.type && f.type.startsWith('image/')) await importImage(f);
+                    else await importPlainText(f.name.replace(/\.[^.]+$/, ''), await f.text());
+                } catch (e) { setDocStatus('❌ ' + f.name + ' 导入失败：' + e.message); }
+            }
+            loadDocs();
+        }
+
+        async function importPlainText(title, text) {
+            const chunks = chunkText(text);
+            if (!chunks.length) { setDocStatus('没抽到足够的文字'); return; }
+            const n = await saveDocChunks(title || '未命名资料', chunks, null);
+            setDocStatus(`✅ 导入 ${title}：${n} 段`);
+        }
+
+        async function importPdf(file) {
+            setDocStatus('📄 正在解析 PDF：' + file.name);
+            const pdfjsLib = await ensurePdfJs();
+            const buf = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+            const title = file.name.replace(/\.pdf$/i, '');
+            let total = 0;
+            for (let p = 1; p <= pdf.numPages; p++) {
+                const page = await pdf.getPage(p);
+                const tc = await page.getTextContent();
+                const text = tc.items.map(it => it.str).join(' ');
+                const chunks = chunkText(text);
+                if (chunks.length) total += await saveDocChunks(title, chunks, p);
+                setDocStatus(`📄 解析中… ${p}/${pdf.numPages} 页（已存 ${total} 段）`);
+            }
+            setDocStatus(`✅ ${title} 导入完成：${total} 段`);
+        }
+
+        async function importImage(file) {
+            setDocStatus('🖼️ 正在识别：' + file.name);
+            const dataUrl = await new Promise((res, rej) => {
+                const r = new FileReader();
+                r.onload = e => res(e.target.result);
+                r.onerror = rej;
+                r.readAsDataURL(file);
+            });
+            const visionPrompt = "请把这张图（书页/讲义/PPT/笔记）里的**全部文字一字不差**转录出来，保留标题与分段。如果含有图表，用一句话说明图表内容。不要解释、不要抒情。";
+            const text = await callModelText([
+                { role: 'user', content: [{ type: 'text', text: visionPrompt }, { type: 'image_url', image_url: { url: dataUrl } }] }
+            ], getVisionModel());
+            const chunks = chunkText(text);
+            if (!chunks.length) { setDocStatus('这张图里没抽到文字'); return; }
+            const n = await saveDocChunks(file.name.replace(/\.[^.]+$/, ''), chunks, null);
+            setDocStatus(`✅ 图片导入完成：${n} 段`);
+        }
+
+        async function saveDocChunks(title, chunks, page) {
+            if (!dbConnected || !db) return 0;
+            let n = 0;
+            const rows = chunks.map((t, i) => ({ title: title, page: page || null, chunk_index: i, text: t }));
+            try {
+                const { data } = await db.from('cozy_docs').insert(rows).select('id,chunk_index,text');
+                const saved = data || [];
+                const BATCH = 12;
+                for (let i = 0; i < saved.length; i += BATCH) {
+                    const slice = saved.slice(i, i + BATCH);
+                    let vecs = null;
+                    try { vecs = await embedTexts(slice.map(r => r.text.slice(0, 500))); } catch (e) { continue; }
+                    if (!vecs) continue;
+                    const vrows = slice.map((r, k) => ({
+                        source_key: `doc:${title}#${page || 0}#${r.chunk_index}`,
+                        text: r.text.slice(0, 500),
+                        folder: '教材·' + title,
+                        mem_date: page ? ('第' + page + '页') : '',
+                        embedding: vecs[k]
+                    })).filter(x => x.embedding);
+                    try { await db.from('cozy_mem_vec').upsert(vrows, { onConflict: 'source_key' }); } catch (e) {}
+                }
+                n = saved.length;
+            } catch (e) { setDocStatus('❌ 保存失败：' + e.message); }
+            return n;
+        }
+
+        async function loadDocs() {
+            if (!dbConnected || !db) return;
+            try {
+                const { data } = await db.from('cozy_docs').select('title,page').limit(2000);
+                const map = {};
+                (data || []).forEach(r => { map[r.title] = (map[r.title] || 0) + 1; });
+                docsList = Object.keys(map).map(t => ({ title: t, chunks: map[t] }));
+                renderDocsUI();
+            } catch (e) { console.warn('加载资料失败（cozy_docs 表可能还没建）:', e.message); }
+        }
+
+        function renderDocsUI() {
+            const c = document.getElementById('docListContainer');
+            if (!c) return;
+            if (!docsList || !docsList.length) {
+                c.innerHTML = "<div style='font-size:11.5px;opacity:0.45; padding:6px 2px; line-height:1.8;'>还没有导入资料。<br>点「导入文件」选 PDF 或书页照片，或点「粘贴文字」。</div>";
+                return;
+            }
+            c.innerHTML = '';
+            docsList.forEach((d, i) => {
+                const div = document.createElement('div');
+                div.className = 'todo-item';
+                div.innerHTML = `<div class="todo-item-main"><span>📄 ${escapeMomentHtml(d.title)}<span style="opacity:0.5;font-size:11px;">（${d.chunks} 段）</span></span></div>
+                    <div class="todo-actions"><button class="delete-btn" onclick="deleteDoc(${i})">×</button></div>`;
+                c.appendChild(div);
+            });
+        }
+
+        async function deleteDoc(i) {
+            const d = docsList[i];
+            if (!d) return;
+            if (!confirm('删掉「' + d.title + '」的全部内容？')) return;
+            if (!dbConnected || !db) return;
+            try {
+                await db.from('cozy_docs').delete().eq('title', d.title);
+                try { await db.from('cozy_mem_vec').delete().like('source_key', 'doc:' + d.title + '#%'); } catch (e) {}
+                setDocStatus('已删除：' + d.title);
+                loadDocs();
+            } catch (e) { setDocStatus('删除失败：' + e.message); }
+        }
+
+        function pasteDocText() {
+            const title = prompt('资料名字（比如：外科学 第三章）');
+            if (!title) return;
+            const text = prompt('把文字粘进来（可以很长）');
+            if (!text) return;
+            importPlainText(title, text).then(() => loadDocs());
         }
 
         function renderBookUI() { 
