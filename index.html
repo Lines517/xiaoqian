@@ -644,7 +644,21 @@
         const API_URL = "https://shufulei.net/v1/chat/completions"; 
         // 🔒 API Key 已移除：所有请求都通过 Supabase Edge Function("总机") 中转，前端不再保存密钥。
         const API_KEY = ""; 
-        let API_MODEL = localStorage.getItem('cozy_selected_model') || "[反重力-0.02]gemini-3.7-flash";
+        // 默认模型。MODEL_DEFAULT_VERSION 变化时，会把本机之前存的旧选择作废一次，
+        // 让新的默认真正生效（之后你在下拉里选的会照常记住）。
+        const MODEL_DEFAULT_VERSION = 2;
+        const MODEL_DEFAULT_NAME = "[企业cli-0.01]gemini-3.5-flash";
+        let API_MODEL = (function () {
+            try {
+                const v = parseInt(localStorage.getItem('cozy_model_default_version') || '0', 10);
+                if (v < MODEL_DEFAULT_VERSION) {
+                    try { localStorage.removeItem('cozy_selected_model'); } catch (e) {}
+                    try { localStorage.setItem('cozy_model_default_version', String(MODEL_DEFAULT_VERSION)); } catch (e) {}
+                    return MODEL_DEFAULT_NAME;
+                }
+                return localStorage.getItem('cozy_selected_model') || MODEL_DEFAULT_NAME;
+            } catch (e) { return MODEL_DEFAULT_NAME; }
+        })();
         const ANNIVERSARY_DATE = new Date('2026-09-12T00:00:00+08:00'); // 认识日
         // 【可选】部署 Supabase Edge Function 后填这里，就能把 API Key 藏到服务端。
         // 已填好：对应的函数名是 chat。若函数还没部署，程序会自动回退到直连，不影响使用。
