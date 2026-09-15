@@ -1634,7 +1634,7 @@ ${historyText}
                     const mKeys = new Set(memoryDb.map(m => memoryItemDate(m) + '|' + (m.memory || '')));
                     cloudMems.forEach(c => {
                         const key = String(c.memory_date || '').replace(/\//g, '-') + '|' + (c.memory || '');
-                        if (!mKeys.has(key)) { mergedMems.push({ date: c.memory_date, memory: c.memory, emotion: c.emotion, state: c.state, folder: c.folder }); mKeys.add(key); }
+                        if (!mKeys.has(key)) { mergedMems.push({ cloudId: c.id, date: c.memory_date, memory: c.memory, emotion: c.emotion, state: c.state, folder: c.folder }); mKeys.add(key); }
                     });
                     memoryDb = mergedMems;
                     try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
@@ -2119,11 +2119,79 @@ Always keep an extremely gentle, mature and equal tone.
                     const div = document.createElement('div');
                     div.className = "memory-item";
                     div.style.marginLeft = "6px";
-                    div.innerHTML = `<div><strong>🧠 核心记忆</strong>：${escapeMomentHtml(item.memory || '')}</div><div style="font-size:11px;opacity:0.55;margin-top:3px;">🎭 ${escapeMomentHtml(item.emotion || '')} | 🌱 ${escapeMomentHtml(item.state || '温柔陪伴')}</div>`;
+
+                    if (memKey(item) === editingMemoryKey) {
+                        div.innerHTML = `<div class="todo-edit-row">
+                                <textarea id="memEditBox" style="width:100%;min-height:90px;font-size:13px;line-height:1.7;border:1px solid rgba(27,59,43,0.15);border-radius:10px;padding:8px 10px;background:transparent;color:var(--text-color);outline:none;font-family:inherit;resize:vertical;">${escapeMomentHtml(item.memory || '')}</textarea>
+                                <div class="todo-edit-actions">
+                                    <button type="button" class="cancel" onclick="cancelMemoryEdit()">取消</button>
+                                    <button type="button" class="save" onclick="saveMemoryEdit('${memKey(item).replace(/'/g, "\\'")}')">保存</button>
+                                </div>
+                            </div>`;
+                        folder.appendChild(div);
+                        return;
+                    }
+
+                    div.innerHTML = `<div style="display:flex;gap:6px;align-items:flex-start;">
+                            <div style="flex:1;min-width:0;">
+                                <div><strong>🧠 核心记忆</strong>：${escapeMomentHtml(item.memory || '')}</div>
+                                <div style="font-size:11px;opacity:0.55;margin-top:3px;">🎭 ${escapeMomentHtml(item.emotion || '')} | 🌱 ${escapeMomentHtml(item.state || '温柔陪伴')}</div>
+                            </div>
+                            <div class="todo-actions" style="flex-shrink:0;">
+                                <button class="edit-btn" title="修改这条" onclick="startMemoryEdit('${memKey(item).replace(/'/g, "\\'")}')">✎</button>
+                                <button class="delete-btn" title="删除这条" onclick="removeMemoryItem('${memKey(item).replace(/'/g, "\\'")}')">×</button>
+                            </div>
+                        </div>`;
                     folder.appendChild(div);
                 });
                 container.appendChild(folder);
             });
+        }
+
+        // ================= 【记忆条目：修改 / 删除】 =================
+        let editingMemoryKey = null;
+        function memKey(item) { return memoryItemDate(item) + '|' + String(item.memory || '').slice(0, 50); }
+
+        function startMemoryEdit(key) { editingMemoryKey = key; renderMemoryUI(); }
+        function cancelMemoryEdit() { editingMemoryKey = null; renderMemoryUI(); }
+
+        async function saveMemoryEdit(key) {
+            const item = (memoryDb || []).find(m => memKey(m) === key);
+            if (!item) return;
+            const box = document.getElementById('memEditBox');
+            const text = (box && box.value || '').trim();
+            if (!text) return;
+            const oldText = item.memory;
+            const dbDate = item.date || memoryItemDate(item);
+            item.memory = text;
+            editingMemoryKey = null;
+            try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
+            renderMemoryUI();
+            if (dbConnected && db) {
+                try {
+                    if (item.cloudId) await db.from('cozy_memories').update({ memory: text }).eq('id', item.cloudId);
+                    else await db.from('cozy_memories').update({ memory: text }).eq('memory_date', dbDate).eq('memory', oldText);
+                } catch (e) { console.warn('云端修改失败:', e.message); }
+            }
+            try { renderSelfUI(); } catch (e) {}
+        }
+
+        async function removeMemoryItem(key) {
+            const item = (memoryDb || []).find(m => memKey(m) === key);
+            if (!item) return;
+            if (!confirm('删掉这条记忆？')) return;
+            const oldText = item.memory;
+            const dbDate = item.date || memoryItemDate(item);
+            memoryDb = (memoryDb || []).filter(m => memKey(m) !== key);
+            try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
+            renderMemoryUI();
+            if (dbConnected && db) {
+                try {
+                    if (item.cloudId) await db.from('cozy_memories').delete().eq('id', item.cloudId);
+                    else await db.from('cozy_memories').delete().eq('memory_date', dbDate).eq('memory', oldText);
+                } catch (e) { console.warn('云端删除失败:', e.message); }
+            }
+            try { renderSelfUI(); } catch (e) {}
         }
 
         // 「核心设定」记忆块：身份 / 关系 / 共同经历全部由它提供（代码不写死人设）
