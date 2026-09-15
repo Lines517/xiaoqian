@@ -1920,6 +1920,14 @@ ${historyText}
                 }
             } catch (e) {}
 
+            // 🔤 她最近在背的单词：让聊天能自然用起来，加深印象
+            let wordPrompt = "";
+            try {
+                const wm = (memoryDb || []).filter(m => String(m.folder || '').startsWith('背单词'))
+                    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
+                if (wm) wordPrompt = `\n【她最近在背的单词】：${sanitizeForApi(wm.memory || '').slice(0, 260)}\n（如果聊到相关意思，可以自然地用上一两个这些词——像日常说话那样用，不要硬塞、不要变成上课或考试。）`;
+            } catch (e) {}
+
             // 🗂️ 让小千能看到其他 App 里的数据：朋友圈 / 共读笔记 / 歌单 / 最近记忆碎片
             let dataPrompt = "";
             try {
@@ -1975,7 +1983,7 @@ ${historyText}
 Always keep an extremely gentle, mature and equal tone.
 
 【你是谁、对方是谁】：全部以「核心设定」和记忆库为准——上面没有写到的身份细节，不要自行编造；想不起来就诚实地问，或说不知道。
-【输出铁律】：**只输出你要说给对方听的话本身**。绝对不要输出思考过程、分析、计划、编号步骤（1. 2. 3.）、英文草稿或"Final Polish"这类字样。第一条字就要是你真正想说的话。${memoryPrompt}${factsPrompt}${vecPrompt}${dataPrompt}${extraContextPrompt}
+【输出铁律】：**只输出你要说给对方听的话本身**。绝对不要输出思考过程、分析、计划、编号步骤（1. 2. 3.）、英文草稿或"Final Polish"这类字样。第一条字就要是你真正想说的话。${memoryPrompt}${factsPrompt}${vecPrompt}${wordPrompt}${dataPrompt}${extraContextPrompt}
 
 【代码输出规则】：如果对方让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
 【页面技术背景（供读代码时参考）】：这个页面是一个单文件网页应用（index.html，托管在 GitHub 的 Lines517/xiaoqian，用 Supabase 做云端数据库）。页面里的 App 有：灯下闲谈(聊天)、碎碎念(日程)、一起读书(共读)、一起听歌、朋友圈、庇护所记忆。数据表有 cozy_chats/cozy_memories/cozy_facts/cozy_moments/cozy_reading_notes/cozy_playlist。当对方让你看代码或提修改建议时，请给出具体、可执行、按优先级排序的建议。
@@ -3138,10 +3146,15 @@ ${text}
             'conclude|v. 得出结论；结束|conclude the meeting'
         ];
         let wordList = [];
-        let wordQueue = [];
+        let wordDeck = [];        // 今天要背的词
+        let wordRound = 1;        // 1=第一遍 2=第二遍
         let wordPos = 0;
         let wordRevealed = false;
+        let wordMissed = [];      // 第一遍答错的
+        let quizDeck = [], quizPos = 0, quizScore = 0;
         const WORD_INTERVALS = [0, 1, 2, 4, 7, 15, 30];  // stage → 下次间隔(天)
+
+        function shuffleArr(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
 
         async function loadWords(manual) {
             if (!dbConnected || !db) { if (manual) alert('还没连上云端'); return; }
@@ -3156,17 +3169,16 @@ ${text}
                         wordList = d2 || [];
                     }
                 }
-                buildWordQueue();
-                renderWordCard();
+                buildWordDeck();
+                renderWords();
             } catch (e) { console.warn('加载词库失败（cozy_words 表可能还没建）:', e.message); }
         }
 
-        function buildWordQueue() {
+        function buildWordDeck() {
             const now = Date.now();
-            wordQueue = (wordList || []).filter(w => !w.next_review || new Date(w.next_review).getTime() <= now);
-            for (let i = wordQueue.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = wordQueue[i]; wordQueue[i] = wordQueue[j]; wordQueue[j] = t; }
-            wordPos = 0;
-            wordRevealed = false;
+            wordDeck = shuffleArr((wordList || []).filter(w => !w.next_review || new Date(w.next_review).getTime() <= now));
+            wordRound = 1; wordPos = 0; wordRevealed = false; wordMissed = [];
+            quizDeck = []; quizPos = 0; quizScore = 0;
         }
 
         function wordBtn(txt, fn) {
@@ -3176,39 +3188,88 @@ ${text}
             return b;
         }
 
-        function renderWordCard() {
+        function renderWords() {
             const card = document.getElementById('wordCard');
             const acts = document.getElementById('wordActions');
             const stats = document.getElementById('wordStats');
             if (!card || !acts) return;
-            if (stats) stats.textContent = `词库 ${(wordList || []).length} 词 ｜ 今天要过 ${wordQueue.length} 个 ｜ 已过 ${wordPos} 个`;
+            acts.style.flexDirection = 'row';
             card.innerHTML = ''; acts.innerHTML = '';
+            const quizPart = quizDeck.length ? ` ｜ 测验 ${Math.min(quizPos, quizDeck.length)}/${quizDeck.length}` : '';
+            if (stats) stats.textContent = `词库 ${(wordList || []).length} 词 ｜ 今天要背 ${wordDeck.length} 个 ｜ 第 ${wordRound} 遍 ${Math.min(wordPos, wordDeck.length)}/${wordDeck.length}${quizPart}`;
+
             if (!wordList || !wordList.length) {
-                card.innerHTML = "<div style='font-size:13px;opacity:0.6;line-height:2;'>词库还是空的。<br>点 ↻ 可以导入我准备的内置起步词库（60 词），<br>或者点「📥 导入词表」粘贴你自己的。</div>";
+                card.innerHTML = "<div style='font-size:13px;opacity:0.6;line-height:2;'>词库还是空的。<br>点 ↻ 导入我准备的内置起步词库（60 词），<br>或点「📥 导入词表」粘贴你自己的。</div>";
                 return;
             }
-            if (wordPos >= wordQueue.length) {
-                card.innerHTML = "<div style='font-size:14px;opacity:0.75;line-height:2.1;'>🎉 今天的词都过完了<br><span style='font-size:12px;opacity:0.6;'>明天它们会回来考你——今天答错的，回来得更勤。</span></div>";
+            if (wordDeck.length === 0) {
+                card.innerHTML = "<div style='font-size:14px;opacity:0.75;line-height:2.1;'>今天没有到期的词 🎉<br><span style='font-size:12px;opacity:0.6;'>明天它们会回来考你。想加练就去「📥 导入词表」加点新词。</span></div>";
                 return;
             }
-            const w = wordQueue[wordPos];
-            card.innerHTML = `<div style="font-size:34px; font-weight:600; letter-spacing:1px; word-break:break-word; line-height:1.3;">${escapeMomentHtml(w.word)}</div>
-                <div id="wordMeaning" style="font-size:14px; opacity:${wordRevealed ? 1 : 0}; transition:opacity .15s; line-height:1.95; min-height:64px;">
-                    <div style="font-weight:bold;">${escapeMomentHtml(w.meaning || '')}</div>
-                    ${w.example ? `<div style="font-size:12.5px;opacity:0.6;margin-top:6px;">${escapeMomentHtml(w.example)}</div>` : ''}
-                    ${(w.wrong_count || 0) > 0 ? `<div style="font-size:11px;opacity:0.45;margin-top:6px;">（错过 ${w.wrong_count} 次）</div>` : ''}
-                </div>`;
-            if (!wordRevealed) {
-                acts.appendChild(wordBtn('看意思', () => { wordRevealed = true; renderWordCard(); }));
-            } else {
-                acts.appendChild(wordBtn('✅ 认识', () => answerWord(true)));
-                acts.appendChild(wordBtn('❌ 不认识', () => answerWord(false)));
+
+            // ① 还在背（第 1 或第 2 遍）
+            if (wordPos < wordDeck.length) {
+                const w = wordDeck[wordPos];
+                card.innerHTML = `<div style="font-size:12px;opacity:0.45;">第 ${wordRound} 遍 · ${wordPos + 1}/${wordDeck.length}</div>
+                    <div style="font-size:34px; font-weight:600; letter-spacing:1px; word-break:break-word; line-height:1.3;">${escapeMomentHtml(w.word)}</div>
+                    <div id="wordMeaning" style="font-size:14px; opacity:${wordRevealed ? 1 : 0}; transition:opacity .15s; line-height:1.95; min-height:64px;">
+                        <div style="font-weight:bold;">${escapeMomentHtml(w.meaning || '')}</div>
+                        ${w.example ? `<div style="font-size:12.5px;opacity:0.6;margin-top:6px;">${escapeMomentHtml(w.example)}</div>` : ''}
+                        ${(w.wrong_count || 0) > 0 ? `<div style="font-size:11px;opacity:0.45;margin-top:6px;">（累计错过 ${w.wrong_count} 次）</div>` : ''}
+                    </div>`;
+                if (!wordRevealed) acts.appendChild(wordBtn('看意思', () => { wordRevealed = true; renderWords(); }));
+                else {
+                    acts.appendChild(wordBtn('✅ 认识', () => answerWord(true)));
+                    acts.appendChild(wordBtn('❌ 不认识', () => answerWord(false)));
+                }
+                return;
             }
+
+            // ② 第一遍结束 → 进入第二遍
+            if (wordRound === 1) {
+                card.innerHTML = `<div style="font-size:15px;line-height:2.1;">第一遍过完了 ✅<br><span style="font-size:12.5px;opacity:0.65;">再走一遍（第二遍），这次会更牢。${wordMissed.length ? `<br>刚才没掌握的有 ${wordMissed.length} 个。` : ''}</span></div>`;
+                acts.appendChild(wordBtn('🔁 开始第二遍', () => { shuffleArr(wordDeck); wordRound = 2; wordPos = 0; wordRevealed = false; renderWords(); }));
+                return;
+            }
+
+            // ③ 两遍都过完 → 测验
+            if (!quizDeck.length) {
+                card.innerHTML = `<div style="font-size:15px;line-height:2.1;">两遍都过完了 🎉<br><span style="font-size:12.5px;opacity:0.65;">最后考你一遍，就收工。</span></div>`;
+                acts.appendChild(wordBtn('📝 考我一遍', () => startQuiz()));
+                acts.appendChild(wordBtn('今天先这样', () => saveWordMemory()));
+                return;
+            }
+            if (quizPos < quizDeck.length) {
+                const w = quizDeck[quizPos];
+                const wrongs = shuffleArr((wordList || []).filter(x => x.word !== w.word)).slice(0, 3).map(x => x.word);
+                const opts = shuffleArr([w.word, ...wrongs]);
+                card.innerHTML = `<div style="font-size:12px;opacity:0.5;">选出对应的英文 · ${quizPos + 1}/${quizDeck.length}</div>
+                    <div style="font-size:19px;font-weight:600;line-height:1.7;">${escapeMomentHtml(w.meaning || w.word)}</div>`;
+                acts.style.flexDirection = 'column';
+                acts.style.alignItems = 'center';
+                opts.forEach(o => {
+                    const b = wordBtn(o, () => answerQuiz(w, o));
+                    b.style.width = 'min(340px, 84vw)';
+                    acts.appendChild(b);
+                });
+                return;
+            }
+            // ④ 测验结束
+            card.innerHTML = `<div style="font-size:16px;line-height:2.2;">📝 测验完成<br><span style="font-size:13px;opacity:0.75;">答对 ${quizScore} / ${quizDeck.length} 题</span><br><span style="font-size:12px;opacity:0.6;">答错的已经记下，10 分钟后会再来找你。</span></div>`;
+            acts.appendChild(wordBtn('保存并收工 💾', () => saveWordMemory()));
         }
 
         async function answerWord(known) {
-            const w = wordQueue[wordPos];
+            const w = wordDeck[wordPos];
             if (!w) return;
+            wordRevealed = false;
+            wordPos++;
+            if (wordRound === 1) {
+                if (!known) wordMissed.push(w.word);
+                renderWords();          // 第一遍只记对错，不改复习计划
+                return;
+            }
+            // 第二遍：正式写复习计划
             const nextStage = known ? Math.min((w.stage || 0) + 1, WORD_INTERVALS.length - 1) : 0;
             const nextTs = known ? (Date.now() + WORD_INTERVALS[nextStage] * 24 * 3600 * 1000) : (Date.now() + 10 * 60 * 1000);
             const upd = {
@@ -3218,9 +3279,52 @@ ${text}
                 wrong_count: (w.wrong_count || 0) + (known ? 0 : 1)
             };
             Object.assign(w, upd);
-            wordPos++; wordRevealed = false;
-            renderWordCard();
+            renderWords();
             try { await db.from('cozy_words').update(upd).eq('id', w.id); } catch (e) {}
+        }
+
+        function startQuiz() {
+            const prefer = wordDeck.filter(w => wordMissed.includes(w.word));
+            const rest = shuffleArr(wordDeck.filter(w => !wordMissed.includes(w.word)));
+            quizDeck = prefer.concat(rest).slice(0, 8);
+            quizPos = 0; quizScore = 0;
+            renderWords();
+        }
+
+        async function answerQuiz(w, chosen) {
+            const right = (chosen === w.word);
+            if (right) quizScore++;
+            else {
+                w.stage = 0;
+                w.next_review = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+                w.wrong_count = (w.wrong_count || 0) + 1;
+                try { await db.from('cozy_words').update({ stage: 0, next_review: w.next_review, wrong_count: w.wrong_count }).eq('id', w.id); } catch (e) {}
+            }
+            const card = document.getElementById('wordCard');
+            if (card) card.insertAdjacentHTML('afterbegin', `<div style="font-size:15px;font-weight:bold;color:${right ? '#4a7c59' : '#c0392b'};">${right ? '✅ 对了' : '❌ 应该是 ' + escapeMomentHtml(w.word)}</div>`);
+            const acts = document.getElementById('wordActions');
+            if (acts) acts.innerHTML = '';
+            setTimeout(() => { quizPos++; renderWords(); }, 850);
+        }
+
+        // 💾 把今天的成果写进记忆（主聊天里我能看到，也能在聊天里帮你用起来）
+        async function saveWordMemory() {
+            if (!wordDeck.length) { return; }
+            const missed = wordDeck.filter(w => (w.stage || 0) === 0).map(w => w.word);
+            const learn = wordDeck.slice(0, 14).map(w => w.word).join(', ');
+            const today = getCozySessionId();
+            const memory = `【背单词 ${today}】今天过了 ${wordDeck.length} 个词（两遍），测验 ${quizDeck.length} 题答对 ${quizScore} 题。今天碰到的词：${learn}${missed.length ? '。还没掌握的：' + missed.slice(0, 10).join(', ') : '。全部掌握 👏'}`;
+            const obj = { date: today, folder: '背单词', memory: memory, emotion: '', state: '陪读' };
+            memoryDb.unshift(obj);
+            try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
+            renderMemoryUI();
+            if (dbConnected && db) {
+                try { await db.from('cozy_memories').insert([{ memory_date: today, folder: '背单词', memory: memory, emotion: '', state: '陪读' }]); } catch (e) {}
+            }
+            setTimeout(function () { try { indexMemoryItemsToVectors([obj]); } catch (e) {} }, 600);
+            alert('已记进记忆 —— 之后聊天时，我会自然地把这些词用起来，帮你加深印象。');
+            buildWordDeck();
+            renderWords();
         }
 
         async function importWordList() {
