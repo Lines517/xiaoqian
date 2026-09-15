@@ -1,0 +1,15 @@
+{
+  "name": "璀璨野心家 · 主播模拟器",
+  "short_name": "璀璨野心家",
+  "description": "神豪系统 + 女主播养成，移动端文字模拟游戏",
+  "start_url": "./game.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0a14",
+  "theme_color": "#0b0a14",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

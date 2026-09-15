@@ -1,0 +1,1513 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0b0a14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="game.webmanifest">
+<title>璀璨野心家 · 主播文游</title>
+<style>
+:root{
+  --bg:#0b0a14; --panel:#161327; --panel2:#1e1a33; --line:#2b2443;
+  --text:#ece8f5; --dim:#9a92b5; --gold:#ffd479; --pink:#ff8fc7;
+  --violet:#a98cff; --ok:#7ee0a8; --bad:#ff7a8a; --cyan:#6fd3ff;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bot:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%;overscroll-behavior:none}
+body{
+  background:radial-gradient(120% 60% at 50% 0%,#1b1533 0%,#0b0a14 55%,#07060d 100%);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:15px; line-height:1.6; overflow:hidden;
+}
+#stars{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.45}
+#app{position:relative;z-index:1;max-width:520px;margin:0 auto;height:100dvh;display:flex;flex-direction:column}
+
+header{
+  padding:calc(var(--safe-top) + 8px) 12px 8px; flex:0 0 auto;
+  background:linear-gradient(180deg,rgba(22,19,39,.97),rgba(22,19,39,.72));
+  backdrop-filter:blur(12px); border-bottom:1px solid var(--line);
+}
+.hd-top{display:flex;align-items:center;gap:7px}
+.hd-name{font-weight:700;font-size:15px;flex:0 0 auto}
+.hd-stage{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600;
+  background:linear-gradient(90deg,rgba(169,140,255,.28),rgba(255,143,199,.28));
+  border:1px solid rgba(169,140,255,.45);color:#e7dcff;white-space:nowrap}
+.hd-day{margin-left:auto;font-size:11px;color:var(--dim);white-space:nowrap}
+.meta{display:flex;gap:5px;margin-top:7px;overflow-x:auto;scrollbar-width:none}
+.meta::-webkit-scrollbar{display:none}
+.mp{flex:0 0 auto;background:#1a1630;border:1px solid var(--line);border-radius:9px;padding:4px 9px;font-size:11px;white-space:nowrap}
+.mp b{font-variant-numeric:tabular-nums;font-weight:700}
+.mp.g b{color:var(--gold)} .mp.v b{color:var(--violet)} .mp.c b{color:var(--ok)}
+.mp.p b{color:var(--pink)} .mp.y b{color:var(--cyan)}
+.guild{flex:0 0 auto;background:linear-gradient(90deg,rgba(255,212,121,.14),rgba(169,140,255,.14));
+  border:1px solid rgba(255,212,121,.3);border-radius:9px;padding:4px 9px;font-size:11px;color:#ffe6ac;white-space:nowrap}
+
+main{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 12px 190px}
+.page{display:none}
+.page.on{display:block}
+.card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;padding:13px;margin-bottom:11px}
+.card h3{margin:0 0 10px;font-size:12.5px;font-weight:700;color:var(--gold);letter-spacing:.6px;display:flex;align-items:center;gap:6px}
+.card h3 .r{margin-left:auto;font-size:10.5px;color:var(--dim);font-weight:400;letter-spacing:0;text-align:right}
+.tiny{font-size:11px;color:var(--dim);line-height:1.65}
+.hr{height:1px;background:var(--line);margin:12px 0}
+
+.turn{margin-bottom:16px;animation:fade .3s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.byme{display:flex;justify-content:flex-end;margin-bottom:15px}
+.byme span{background:linear-gradient(135deg,#5b3ba8,#8e3d74);color:#fff;padding:9px 14px;border-radius:15px 15px 4px 15px;
+  font-size:13.5px;max-width:82%;white-space:pre-wrap;box-shadow:0 6px 18px -10px #8e3d74}
+.nar{font-size:14px;color:#ded7f2;white-space:pre-wrap;line-height:1.78;letter-spacing:.15px}
+.sysbox{background:rgba(169,140,255,.1);border:1px solid rgba(169,140,255,.32);border-radius:12px;padding:9px 12px;
+  font-size:12.5px;color:#ddd0ff;white-space:pre-wrap;margin:9px 0;line-height:1.65}
+.hint{background:rgba(111,211,255,.09);border:1px solid rgba(111,211,255,.3);border-radius:12px;padding:9px 12px;
+  font-size:12.5px;color:#bfe9ff;margin:9px 0;cursor:pointer;display:flex;align-items:center;gap:8px}
+.hint:active{filter:brightness(1.3)}
+.hint .badge{margin-left:auto;background:#ff3b5c;color:#fff;font-size:10px;border-radius:20px;padding:1px 7px;font-weight:700}
+.dlt{font-size:11px;color:var(--ok);background:rgba(126,224,168,.09);border:1px dashed rgba(126,224,168,.3);
+  border-radius:10px;padding:5px 10px;margin:8px 0;display:inline-block}
+.typ{display:inline-flex;gap:4px;padding:10px 0}
+.typ i{width:6px;height:6px;border-radius:50%;background:var(--violet);display:block;animation:ty 1s infinite}
+.typ i:nth-child(2){animation-delay:.15s} .typ i:nth-child(3){animation-delay:.3s}
+@keyframes ty{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{appearance:none;border:1px solid var(--line);border-radius:14px;padding:12px 9px;
+  background:linear-gradient(180deg,#241f3d,#1b1730);color:var(--text);
+  font-size:13px;font-weight:600;font-family:inherit;text-align:center;cursor:pointer;
+  transition:transform .1s,filter .15s;min-height:52px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.btn:active{transform:scale(.96);filter:brightness(1.25)}
+.btn .ico{font-size:16px;line-height:1.1}
+.btn small{font-size:9.5px;color:var(--dim);font-weight:400;line-height:1.35}
+.btn.gold{background:linear-gradient(135deg,#c99b2e,#ffd479);border-color:transparent;color:#241a04;box-shadow:0 6px 18px -8px #ffd479}
+.btn.pri{background:linear-gradient(135deg,#7a4fd6,#c94f9b);border-color:transparent;box-shadow:0 6px 18px -8px #c94f9b}
+.btn.wide{grid-column:1/-1;min-height:46px;flex-direction:row;gap:7px}
+.btn:disabled{opacity:.36;filter:grayscale(.65)}
+
+.st{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.sx{background:#1c1832;border:1px solid var(--line);border-radius:12px;padding:8px 9px;text-align:center}
+.sx .k{font-size:9.5px;color:var(--dim)}
+.sx .v{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+
+.row{display:flex;align-items:center;gap:10px;padding:9px 10px;background:#1c1832;border:1px solid var(--line);border-radius:13px;margin-bottom:7px}
+.row .ic{font-size:19px;width:30px;text-align:center;flex:0 0 auto}
+.row .tx{flex:1;min-width:0}
+.row .tx b{display:block;font-size:12.5px}
+.row .tx span{font-size:10px;color:var(--dim);display:block;line-height:1.4}
+.grd{flex:0 0 auto;font-size:11px;font-weight:800;padding:3px 9px;border-radius:9px;letter-spacing:.5px}
+.gC{background:#2b2547;color:#a49cc4} .gB{background:rgba(111,211,255,.16);color:#8fdcff}
+.gA{background:rgba(169,140,255,.22);color:#c9b4ff} .gS{background:linear-gradient(135deg,#c99b2e,#ffd479);color:#241a04}
+
+.tl{display:flex;align-items:center;gap:11px;padding:11px 4px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer}
+.tl:active{background:rgba(255,255,255,.04)}
+.tl .av{width:44px;height:44px;flex:0 0 auto;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:20px;background:rgba(255,255,255,.06);border:1px solid var(--line)}
+.tl .md{flex:1;min-width:0}
+.tl .md b{font-size:13.5px;display:flex;align-items:center;gap:5px}
+.tl .md span{font-size:11.5px;color:var(--dim);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.tl .rt{flex:0 0 auto;text-align:right;font-size:10px;color:var(--dim)}
+.tl .rt .un{display:inline-block;background:#ff3b5c;color:#fff;font-size:10px;border-radius:20px;padding:1px 7px;font-weight:700;margin-top:4px}
+.gtag{font-size:9px;padding:1px 6px;border-radius:20px;background:rgba(126,224,168,.16);color:#9fe9c1;font-weight:600}
+
+#threadHead{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--line);
+  background:rgba(22,19,39,.95);position:sticky;top:0;z-index:5}
+#threadHead button{background:none;border:none;color:var(--gold);font-size:20px;font-family:inherit;cursor:pointer;padding:0 4px}
+#threadHead .t{flex:1;min-width:0}
+#threadHead .t b{font-size:14px;display:block}
+#threadHead .t span{font-size:10px;color:var(--dim)}
+
+.msg{display:flex;gap:8px;margin-bottom:12px;align-items:flex-end}
+.msg .av{width:32px;height:32px;flex:0 0 auto;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;background:rgba(255,255,255,.06);border:1px solid var(--line)}
+.msg .bb{max-width:76%}
+.msg .who{font-size:10px;color:var(--dim);margin-bottom:3px}
+.msg .bx{background:#241f3d;border:1px solid var(--line);border-radius:4px 14px 14px 14px;padding:9px 13px;font-size:13.5px;white-space:pre-wrap;line-height:1.6}
+.msg.me{flex-direction:row-reverse}
+.msg.me .bb{text-align:right}
+.msg.me .bx{background:linear-gradient(135deg,#5b3ba8,#8e3d74);border-color:transparent;color:#fff;border-radius:14px 4px 14px 14px;text-align:left}
+
+#bottom{position:fixed;left:0;right:0;bottom:0;z-index:30;max-width:520px;margin:0 auto;
+  background:linear-gradient(180deg,rgba(20,17,35,.94),rgba(13,11,24,.99));backdrop-filter:blur(14px);border-top:1px solid var(--line)}
+#composer{display:none;gap:8px;padding:9px 10px 6px;align-items:flex-end}
+#composer.on{display:flex}
+#inp{flex:1;font-family:inherit;font-size:14.5px;background:#120f22;border:1px solid #3b3260;color:var(--text);
+  padding:10px 13px;border-radius:19px;outline:none;resize:none;max-height:104px;line-height:1.45;min-height:41px}
+#inp:focus{border-color:var(--violet)}
+#send{flex:0 0 auto;width:62px;height:41px;border-radius:19px;border:none;font-family:inherit;font-size:13px;font-weight:700;
+  background:linear-gradient(135deg,#7a4fd6,#c94f9b);color:#fff;cursor:pointer}
+#send:disabled{background:#2b2547;color:#5d5680}
+#nav{display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px calc(var(--safe-bot) + 6px)}
+#nav button{appearance:none;background:none;border:none;color:var(--dim);font-family:inherit;font-size:10px;
+  padding:5px 0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;position:relative}
+#nav button i{font-size:18px;font-style:normal;line-height:1;transition:transform .15s}
+#nav button.on{color:var(--gold)}
+#nav button.on i{transform:translateY(-2px) scale(1.12)}
+#nav button .nb{position:absolute;top:1px;right:calc(50% - 22px);background:#ff3b5c;color:#fff;font-size:9px;
+  border-radius:20px;padding:0 5px;font-weight:700;min-width:15px}
+
+#toast{position:fixed;left:50%;bottom:150px;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:7px;align-items:center;pointer-events:none;width:max-content;max-width:90vw}
+.tst{background:rgba(30,26,51,.97);border:1px solid var(--line);border-left:3px solid var(--violet);color:#ece8f5;font-size:12.5px;padding:9px 14px;border-radius:11px;box-shadow:0 12px 30px -12px #000;animation:tIn .3s ease}
+.tst.g{border-left-color:var(--gold)} .tst.ok{border-left-color:var(--ok)} .tst.b{border-left-color:var(--bad)}
+@keyframes tIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+.modal{position:fixed;inset:0;z-index:80;background:rgba(5,4,10,.8);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;padding:18px}
+.modal.on{display:flex}
+.mbox{width:100%;max-width:410px;max-height:84dvh;overflow-y:auto;
+  background:linear-gradient(180deg,#1d1834,#161328);border:1px solid #3b3260;border-radius:19px;
+  padding:19px;box-shadow:0 24px 60px -18px #000;animation:mIn .28s cubic-bezier(.2,1.1,.4,1)}
+@keyframes mIn{from{opacity:0;transform:scale(.93) translateY(14px)}to{opacity:1;transform:none}}
+.mbox h2{margin:0 0 4px;font-size:16.5px}
+.mbox .sub{font-size:11.5px;color:var(--dim);margin-bottom:13px}
+.mbox p{font-size:13.5px;color:#d5cdea;margin:0 0 13px;white-space:pre-wrap;line-height:1.65}
+.mbox .out{font-size:13px;color:#e6e0ff;white-space:pre-wrap;line-height:1.75;margin:0 0 13px;
+  background:#141124;border:1px solid var(--line);border-radius:12px;padding:12px;max-height:44dvh;overflow-y:auto}
+.mopt{display:block;width:100%;text-align:left;font-family:inherit;font-size:13.5px;background:#241f3d;
+  border:1px solid var(--line);color:var(--text);padding:12px 14px;border-radius:13px;margin-bottom:7px;cursor:pointer}
+.mopt:active{transform:scale(.98)}
+.mopt:last-child{margin-bottom:0}
+.inp{width:100%;font-family:inherit;font-size:15px;background:#120f22;border:1px solid #3b3260;color:var(--text);
+  padding:11px 13px;border-radius:13px;outline:none;margin-bottom:11px}
+textarea.inp{font-size:13.5px;min-height:110px;resize:vertical;line-height:1.6}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:var(--gold);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;background:rgba(169,140,255,.18);border:1px solid rgba(169,140,255,.35);color:#ddd0ff;margin:0 4px 4px 0}
+.tag.ok{background:rgba(126,224,168,.15);border-color:rgba(126,224,168,.35);color:#bff0d4}
+.tag.b{background:rgba(255,122,138,.14);border-color:rgba(255,122,138,.35);color:#ffb3bd}
+.empty{text-align:center;color:var(--dim);font-size:12.5px;padding:26px 10px}
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+
+<div id="app">
+  <header>
+    <div class="hd-top">
+      <span class="hd-name" id="hName">—</span>
+      <span class="hd-stage" id="hStage">语音厅</span>
+      <span class="hd-day" id="hDay">第 1 天</span>
+    </div>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <main id="main">
+    <section class="page on" id="p-story">
+      <div id="story"></div>
+    </section>
+
+    <section class="page" id="p-sys">
+      <div class="card">
+        <h3>✦ 系统面板 <span class="r" id="sysStage"></span></h3>
+        <div class="st">
+          <div class="sx"><div class="k">人气</div><div class="v" id="vPop">0</div></div>
+          <div class="sx"><div class="k">颜值</div><div class="v" id="vFace">12</div></div>
+          <div class="sx"><div class="k">才艺</div><div class="v" id="vArt">6</div></div>
+          <div class="sx"><div class="k">音色</div><div class="v" id="vVoice">10</div></div>
+          <div class="sx"><div class="k">声望</div><div class="v" id="vFame">0</div></div>
+          <div class="sx"><div class="k">伪装度</div><div class="v" id="vDis">80</div></div>
+        </div>
+        <div class="hr"></div>
+        <div class="tiny" id="sysNote"></div>
+      </div>
+
+      <div class="card">
+        <h3>🎴 系统抽取 <span class="r">颜值 / 才艺 / 音色 只能靠抽</span></h3>
+        <div class="tiny" style="margin-bottom:10px" id="drawNote"></div>
+        <div class="grid">
+          <button class="btn gold" id="d1"><span class="ico">🎴</span>抽 1 次 <small id="d1c">200 情绪值</small></button>
+          <button class="btn pri" id="d10"><span class="ico">🎊</span>抽 10 次 <small>2000 情绪值 · 保底 A 级</small></button>
+        </div>
+        <div class="hr"></div>
+        <div class="tiny"><b class="gold2">已学课程</b></div>
+        <div id="learned" class="tiny" style="margin-top:5px"></div>
+      </div>
+
+      <div class="card">
+        <h3>🎒 背包</h3>
+        <div id="bag" class="tiny"></div>
+      </div>
+
+      <div class="card">
+        <h3>💠 目标 <span class="r" id="tgtInfo"></span></h3>
+        <div class="tiny" style="margin-bottom:9px">直播认识、私信聊过的人会自动进这里。探查 1 万财富值，绑定前 3 个免费，入梦 10 万财富值。</div>
+        <div id="tgts"></div>
+      </div>
+    </section>
+
+    <section class="page" id="p-dm">
+      <div id="dmListWrap">
+        <div class="card">
+          <h3>💬 私信 <span class="r" id="dmInfo"></span></h3>
+          <div class="grid">
+            <button class="btn wide" id="newGroup"><span class="ico">👥</span>建一个群 <small>粉丝群 / 主播互助群</small></button>
+          </div>
+        </div>
+        <div id="dmList"></div>
+      </div>
+      <div id="dmThread" style="display:none">
+        <div id="threadHead">
+          <button id="backBtn">‹</button>
+          <div class="t"><b id="thName">—</b><span id="thSub"></span></div>
+        </div>
+        <div id="threadMsgs" style="padding:12px 0"></div>
+      </div>
+    </section>
+
+    <section class="page" id="p-save">
+      <div class="card">
+        <h3>💾 存档</h3>
+        <div class="tiny">每次操作都会自动存在本机浏览器里。<br>但手机清缓存 / iOS 超过 7 天没开 → 可能丢。<br><b class="gold2">建议每周导一次存档码</b>，粘到备忘录里。</div>
+        <div class="hr"></div>
+        <div class="grid">
+          <button class="btn gold wide" id="a-export"><span class="ico">📤</span>导出存档码</button>
+          <button class="btn wide" id="a-import"><span class="ico">📥</span>导入存档码</button>
+          <button class="btn wide" id="a-rename"><span class="ico">✏️</span>改名字</button>
+          <button class="btn wide" id="a-reset" style="border-color:rgba(255,122,138,.4)"><span class="ico">🗑</span>重开一局</button>
+        </div>
+        <div class="hr"></div>
+        <div class="tiny" id="saveMeta">—</div>
+      </div>
+      <div class="card">
+        <h3>🤖 AI 引擎</h3>
+        <div class="tiny" style="margin-bottom:9px" id="aiState"></div>
+        <div class="grid">
+          <button class="btn wide" id="a-aiMode"><span class="ico">🔀</span>切换 AI 通道</button>
+          <button class="btn wide" id="a-aiTest"><span class="ico">🧪</span>测试连通</button>
+        </div>
+        <div class="hr"></div>
+        <div class="tiny">没接 AI 也能玩，会用本地规则续写，但会比较笨。<br>接了 AI，你写什么它就演什么。</div>
+      </div>
+      <div class="card">
+        <h3>📖 怎么玩</h3>
+        <div class="tiny" id="helpBox"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="bottom">
+    <div id="composer">
+      <textarea id="inp" rows="1" placeholder="你要做什么、说什么……"></textarea>
+      <button id="send">发送</button>
+    </div>
+    <nav id="nav">
+      <button data-page="story" class="on"><i>📖</i>剧情</button>
+      <button data-page="sys"><i>✦</i>系统</button>
+      <button data-page="dm"><i>💬</i>私信</button>
+      <button data-page="save"><i>💾</i>存档</button>
+    </nav>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div class="modal" id="modal"><div class="mbox" id="mbox"></div></div>
+
+<script>
+(function(){
+"use strict";
+
+var KEY = "canlan_game_v3";
+var PROJECT = "https://kejcaijcqlfmtlfxktrk.supabase.co";
+var SBKEY = "sb_publishable_xa16IttRP-xHQdHSiDNCsA_3dOlQutU";
+var EP_CHAT = PROJECT + "/functions/v1/chat";
+var EP_GAME = PROJECT + "/functions/v1/game_ai";
+var MODEL = "[企业cli-0.01]gemini-3.5-flash";
+
+var STAGES = [
+  {n:"语音厅", pop:0},
+  {n:"团播", pop:800},
+  {n:"个播", pop:6000},
+  {n:"露脸", pop:60000}
+];
+var GUILDS = ["聆音阁","幻夜社"];
+var GUILD_DESC = {
+  "聆音阁":"以音乐为核心，旗下有多个风格各异的语音厅。规矩多、门槛高、资源硬。",
+  "幻夜社":"以虚拟人设和二次元内容为主。氛围自由松散，流量野但天花板低。"
+};
+
+var GRADES = ["C","B","A","S"];
+var GRADE_W = [50, 30, 15, 5];
+var GRADE_VAL = {C:3, B:6, A:10, S:16};
+
+var COURSES = [
+  {n:"声乐教学",   cat:"art",   ic:"🎼", d:"名师一对一带练。练到考核通过，你的唱功才算真的进了账。"},
+  {n:"舞蹈教学",   cat:"art",   ic:"💃", d:"从体态到律动，重塑你在镜头前的样子。"},
+  {n:"话术训练",   cat:"art",   ic:"🗣", d:"如何在三句话内让人记住你，且不敢小看你。"},
+  {n:"乐器速成",   cat:"art",   ic:"🎹", d:"一件乐器，就是你直播间里最便宜的高级感。"},
+  {n:"台词与气息", cat:"voice", ic:"🎙", d:"把声音磨到能当武器用。"},
+  {n:"配音课",     cat:"voice", ic:"🎧", d:"一个人分饰五种声音，弹幕会以为你请了外援。"},
+  {n:"面部微调",   cat:"face",  ic:"💎", d:"不动刀，只调比例。没人看得出来，但所有人都会觉得你变好看了。"},
+  {n:"皮肤管理",   cat:"face",  ic:"🧖", d:"长期项目，见效慢，但别人追不上。"},
+  {n:"形体塑形",   cat:"face",  ic:"🧘", d:"镜头显瘦三十斤的秘密。"},
+  {n:"发量养护",   cat:"face",  ic:"🌱", d:"发际线就是上镜率。"}
+];
+var EXTRAS = [
+  {n:"返现暴击卡", ic:"⚡", d:"下次用打赏金刷自己时，返现翻五倍。"},
+  {n:"热搜卡",     ic:"🔥", d:"一次无预热热搜，人气直接跳一个台阶。"},
+  {n:"流量包",     ic:"🚀", d:"平台推流，看得见地涨粉。"},
+  {n:"伪装滤镜",   ic:"🫧", d:"露脸之前，维持神秘感的最后一道防线。"},
+  {n:"清醒剂",     ic:"💊", d:"情绪值直接回一大口。"}
+];
+
+var DM_POOL = {
+  fan:  ["姐姐声音好好听","老公粉报到！","啊啊啊啊终于等到你","仙女下凡","别跑我们不走",
+         "这声线我可以","榜一今天来了吗","求唱一首","主播看看我","我把工资都给你了","姐姐我有话说"],
+  tech: ["气息比上次稳了","这段转音不错","建议降个 key","有进步","高音上得去，厉害"],
+  hat:  ["声音好听人不一定好看","敢露脸吗","又是个套皮","迟早翻车","买粉了吧","就这？"],
+  mark: ["营销号路过：新晋黑马","吃瓜","已截图","蹲一个后续"],
+  biz:  ["品牌方在找你，方便给个联系方式吗","商单报价发你了，看一下"]
+};
+
+var HELP = "这是文游，没有行动按钮。\n"+
+"1) 在底部输入框里，直接写你想做的事、想说的话。写多写少都行。\n"+
+"2) 系统会自动演算：涨粉、进账、弹幕、私信、群聊，都会自己发生。\n"+
+"3) 颜值 / 才艺 / 音色 不能靠刷，只能在「系统」页抽取课程来提升。\n"+
+"4) 私信页会收到粉丝、男主、主播朋友的消息，也可以自己建群。\n"+
+"5) 目标（人）在「系统」页里可以探查 / 绑定 / 入梦。\n"+
+"6) 目标：人气破 100 万，站上屏幕最中间。";
+
+var s = null, page = "story", openThread = null, busy = false;
+
+function ri(a,b){ return Math.floor(a + Math.random()*(b-a+1)); }
+function rnd(a,b){ return a + Math.random()*(b-a); }
+function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function nf(n){
+  n = Math.floor(n||0);
+  if(n >= 100000000) return (n/100000000).toFixed(1)+"亿";
+  if(n >= 10000) return (n/10000).toFixed(n<100000?2:1)+"万";
+  return String(n);
+}
+function stage(){ return STAGES[s.stage]; }
+function ts(){ return Date.now(); }
+function hhmm(t){
+  var d = new Date(t||Date.now());
+  return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+}
+function hashOf(str){
+  var h = 0;
+  for(var i=0;i<String(str).length;i++){ h = (h*31 + String(str).charCodeAt(i)) | 0; }
+  return Math.abs(h);
+}
+var AVATARS = ["🖤","🔥","🎧","💠","✦","🃏","🌙","👑","🐍","🦊","🎭","🍷","⚡","🕯","🐉","🪞","🎯","🌊"];
+var COLORS = ["#9fb6ff","#ff9b6a","#8fd7c8","#c9a6ff","#ffd479","#ff8fc7","#6fd3ff","#7ee0a8"];
+
+function newState(name){
+  return {
+    v:3, name:name||"星晚", day:1, stage:0, guild:"",
+    cash:0, tip:10000, tipDaily:10000, tipCap:100000,
+    wealth:0, mood:200,
+    pop:0, face:12, art:6, voice:10, fame:0, dis:80,
+    items:{}, learned:{}, threads:{}, story:[], targets:{},
+    draws:0, pity:0, flags:{}, recent:[], ended:false,
+    aiMode:"chat", born:Date.now(), saved:Date.now()
+  };
+}
+function save(){
+  if(!s) return;
+  s.saved = Date.now();
+  try{ localStorage.setItem(KEY, JSON.stringify(s)); }catch(e){}
+}
+function load(){
+  try{
+    var raw = localStorage.getItem(KEY);
+    if(!raw) return null;
+    var d = JSON.parse(raw);
+    if(!d || !d.name) return null;
+    var base = newState(d.name);
+    for(var k in base){ if(!(k in d)) d[k] = base[k]; }
+    d.items = d.items||{}; d.learned = d.learned||{}; d.threads = d.threads||{};
+    d.targets = d.targets||{}; d.flags = d.flags||{}; d.story = d.story||[]; d.recent = d.recent||[];
+    return d;
+  }catch(e){ return null; }
+}
+function b64e(str){
+  var bytes = new TextEncoder().encode(str), bin = "";
+  for(var i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function b64d(b64){
+  var bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+function toast(msg, cls){
+  var box = document.getElementById("toast");
+  var el = document.createElement("div");
+  el.className = "tst " + (cls||"");
+  el.textContent = msg;
+  box.appendChild(el);
+  setTimeout(function(){
+    el.style.transition = "opacity .3s";
+    el.style.opacity = "0";
+    setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 320);
+  }, 2200);
+  while(box.children.length > 4) box.removeChild(box.firstChild);
+}
+
+function pushStory(kind, text, extra){
+  var o = {k:kind, t:text, x:extra||null, ts:ts()};
+  s.story.push(o);
+  if(s.story.length > 260) s.story.splice(0, s.story.length-260);
+  return o;
+}
+function pushRecent(o){
+  s.recent.push(o);
+  if(s.recent.length > 12) s.recent.shift();
+}
+
+function threadId(name, type){ return (type==="group" ? "g_" : "d_") + name; }
+function ensureThread(name, type, desc){
+  var id = threadId(name, type);
+  if(!s.threads[id]){
+    s.threads[id] = {
+      id:id, type:type||"dm", name:name, desc:desc||"",
+      av: AVATARS[hashOf(name) % AVATARS.length],
+      color: COLORS[hashOf(name) % COLORS.length],
+      msgs: [], unread: 0, ts: ts()
+    };
+  }
+  return s.threads[id];
+}
+function addMsg(th, who, text){
+  th.msgs.push({who:who, t:text, ts:ts()});
+  if(th.msgs.length > 120) th.msgs.shift();
+  th.ts = ts();
+}
+
+/* ============ 系统抽取 ============ */
+function pickGrade(pityBoost){
+  var w = GRADE_W.slice();
+  if(pityBoost) { w[0] = 0; w[3] = Math.max(w[3], 12); }
+  var tot = w.reduce(function(a,b){ return a+b; },0);
+  var r = Math.random()*tot;
+  for(var i=0;i<w.length;i++){ r -= w[i]; if(r <= 0) return GRADES[i]; }
+  return "C";
+}
+function drawOne(force, pityBoost){
+  var isItem = Math.random() < 0.34;
+  if(force) return {kind:"course", c:COURSES[0], grade:"C"};
+  if(isItem){ return {kind:"extra", e: pick(EXTRAS)}; }
+  return {kind:"course", c: pick(COURSES), grade: pickGrade(pityBoost)};
+}
+function applyDraw(d){
+  if(d.kind === "extra"){
+    s.items[d.e.n] = (s.items[d.e.n]||0) + 1;
+    if(d.e.n === "热搜卡"){ s.pop += Math.floor(s.pop*0.5) + 3000; }
+    if(d.e.n === "流量包"){ s.pop += Math.floor(s.pop*0.2) + 800; }
+    if(d.e.n === "清醒剂"){ s.mood += 200; }
+    return d.e.ic + " " + d.e.n;
+  }
+  var v = GRADE_VAL[d.grade];
+  var label = d.c.n + " · " + d.grade + " 级";
+  var old = s.learned[d.c.n];
+  if(!old || GRADES.indexOf(d.grade) > GRADES.indexOf(old)){
+    s.learned[d.c.n] = d.grade;
+    s[d.c.cat] = clamp(s[d.c.cat] + v, 0, 100);
+    return d.c.ic + " " + label + "（" + catName(d.c.cat) + " +" + v + "）";
+  }
+  s[d.c.cat] = clamp(s[d.c.cat] + Math.ceil(v/2), 0, 100);
+  return d.c.ic + " " + label + "（重复，折算 +" + Math.ceil(v/2) + "）";
+}
+function catName(c){ return c==="art"?"才艺":(c==="face"?"颜值":"音色"); }
+
+function doDraw(n){
+  if(s.draws === 0 && n === 1){
+    var fd = drawOne(true);
+    s.draws++;
+    var txt = applyDraw(fd);
+    pushStory("sys", "【系统】声乐教学 · C 级 已入账。\n\n使用后可开展教学领域，名师指导，直到完成 C 级课程考核结束，可随时退出。领域内时间与你所在位面不同步——教学过程中，你的时间不变。\n\n考核通过后，才艺 +3。");
+    logSys("首次抽取：声乐教学 C 级");
+    save(); render();
+    openModal({title:"🎼 声乐教学 · C 级", sub:"系统首次抽取 · 已自动生效",
+      body:"使用后可开展教学领域，名师指导，直到完成 C 级课程考核结束，可随时退出。\n领域内时间与位面不同步——教学过程中宿主位面时间不变。\n\n" + s.name + "，别浪费。这是你唯一不用靠脸就能赢的东西。",
+      opts:[{t:"收下", fn:function(){}}]});
+    return;
+  }
+  var cost = n===10 ? 2000 : 200;
+  if(s.mood < cost){ toast("情绪值不够（要 " + cost + "）","b"); return; }
+  s.mood -= cost;
+  var results = [];
+  var gotA = false;
+  for(var i=0;i<n;i++){
+    var boost = (n===10 && i === n-1 && !gotA);
+    var d = drawOne(false, boost);
+    if(d.kind === "course" && (d.grade === "A" || d.grade === "S")) gotA = true;
+    results.push(applyDraw(d));
+    s.draws++;
+  }
+  pushStory("sys", "【系统】抽取 ×" + n + "：\n" + results.map(function(x,i){ return "　" + (i+1) + ". " + x; }).join("\n"));
+  save(); render();
+  openModal({title:"🎴 抽取 ×" + n, sub:"消耗 " + cost + " 情绪值",
+    body: results.map(function(x,i){ return (i+1) + ". " + x; }).join("\n"),
+    opts:[{t:"收下", fn:function(){}}]});
+}
+function logSys(m){
+  pushRecent("【系统】" + m);
+}
+
+function useItem(name){
+  if(!(s.items[name] > 0)) return;
+  if(name === "返现暴击卡"){ s.flags.crit = 5; toast("返现暴击卡已生效","g"); }
+  else if(name === "伪装滤镜"){ s.dis = clamp(s.dis+10,0,100); toast("伪装度 +10","ok"); }
+  else if(name === "热搜卡"){ var g = Math.floor(s.pop*0.6)+5000; s.pop += g; toast("热搜！+"+nf(g)+" 粉","g"); }
+  else if(name === "流量包"){ var g2 = Math.floor(s.pop*0.25)+1200; s.pop += g2; toast("推流 +"+nf(g2)+" 粉","g"); }
+  else if(name === "清醒剂"){ s.mood += 150; toast("情绪值 +150","ok"); }
+  else { toast("这个先留着。",""); return; }
+  s.items[name]--;
+  save(); render();
+}
+
+/* ============ 渲染 ============ */
+function renderMeta(){
+  var m = document.getElementById("meta");
+  var html = "";
+  html += '<div class="mp g">财富值 <b>' + nf(s.wealth) + '</b></div>';
+  html += '<div class="mp v">情绪值 <b>' + Math.floor(s.mood) + '</b></div>';
+  html += '<div class="mp c">现金 <b>' + nf(s.cash) + '</b></div>';
+  html += '<div class="mp p">人气 <b>' + nf(s.pop) + '</b></div>';
+  html += '<div class="mp y">打赏金 <b>' + nf(s.tip) + '</b></div>';
+  if(s.guild) html += '<div class="guild">◇ ' + esc(s.guild) + '</div>';
+  m.innerHTML = html;
+  document.getElementById("hName").textContent = s.name;
+  document.getElementById("hStage").textContent = stage().n;
+  document.getElementById("hDay").textContent = "第 " + s.day + " 天";
+}
+function storyHTML(o){
+  if(o.k === "me") return '<div class="byme"><span>' + esc(o.t) + '</span></div>';
+  if(o.k === "sys") return '<div class="sysbox">' + esc(o.t) + '</div>';
+  if(o.k === "dlt") return '<div class="dlt">' + esc(o.t) + '</div>';
+  if(o.k === "hint"){
+    return '<div class="hint" data-open="' + esc(o.x) + '"><span>' + esc(o.t) + '</span>' +
+      (o.x && s.threads[o.x] && s.threads[o.x].unread ? '<span class="badge">' + s.threads[o.x].unread + '</span>' : '') + '</div>';
+  }
+  return '<div class="nar">' + esc(o.t) + '</div>';
+}
+function renderStory(){
+  var box = document.getElementById("story");
+  box.innerHTML = s.story.map(storyHTML).join("");
+  scrollBottom();
+}
+function scrollBottom(){
+  var m = document.getElementById("main");
+  setTimeout(function(){ m.scrollTop = m.scrollHeight; }, 30);
+}
+function renderSys(){
+  document.getElementById("sysStage").textContent = stage().n + (s.guild ? " · " + s.guild : "");
+  document.getElementById("vPop").textContent = nf(s.pop);
+  document.getElementById("vFace").textContent = Math.round(s.face);
+  document.getElementById("vArt").textContent = Math.round(s.art);
+  document.getElementById("vVoice").textContent = Math.round(s.voice);
+  document.getElementById("vFame").textContent = Math.round(s.fame);
+  document.getElementById("vDis").textContent = s.stage>=3 ? "已露脸" : Math.round(s.dis);
+
+  var next = STAGES[s.stage+1];
+  document.getElementById("sysNote").innerHTML =
+    "当前阶段：<b class='gold2'>" + stage().n + "</b>" +
+    (next ? "　下一个阶段「" + next.n + "」需要人气 <b>" + nf(next.pop) + "</b>" + (s.stage===2?" 且 颜值 ≥ 60":""): "　已是最终阶段") +
+    "<br>每日打赏金：<b class='gold2'>" + nf(s.tipDaily) + "</b> / 上限 " + nf(s.tipCap) +
+    "<br>财富值每收入 1 元自动 +1；打赏金只能拿去给自己刷礼物（在剧情里说「给自己刷礼物」）。";
+
+  var free = s.draws === 0;
+  document.getElementById("d1c").textContent = free ? "首次免费 · 已锁定" : "200 情绪值";
+  document.getElementById("drawNote").innerHTML = free
+    ? '<b class="gold2">首次抽取已开放（免费，必定出「声乐教学 C 级」）</b>'
+    : "已抽 <b>" + s.draws + "</b> 次。等级 C / B / A / S，效果依次为 +3 / +6 / +10 / +16。<br>十连保底一个 A 级以上。";
+  document.getElementById("d1").disabled = false;
+  document.getElementById("d10").disabled = free || s.mood < 2000;
+
+  var lk = Object.keys(s.learned);
+  document.getElementById("learned").innerHTML = lk.length
+    ? lk.map(function(k){
+        var g = s.learned[k];
+        var c = COURSES.filter(function(x){ return x.n===k; })[0];
+        return '<span class="grd g'+g+'">'+g+'</span> ' + esc(k) + (c ? ' <span style="color:#6c6489">· '+catName(c.cat)+'</span>' : '');
+      }).join("<br>")
+    : "还没学过任何课程。";
+
+  var bag = Object.keys(s.items).filter(function(k){ return s.items[k] > 0; });
+  document.getElementById("bag").innerHTML = bag.length
+    ? bag.map(function(k){
+        var e = EXTRAS.filter(function(x){ return x.n===k; })[0];
+        var d = e ? e.d : "";
+        return '<div class="row"><div class="ic">'+(e?e.ic:"🎁")+'</div><div class="tx"><b>'+esc(k)+' ×'+s.items[k]+
+          '</b><span>'+esc(d)+'</span></div><button class="btn" style="min-height:34px;padding:6px 12px" data-use="'+esc(k)+'">用</button></div>';
+      }).join("")
+    : "背包是空的。抽卡会出神奇物品。";
+
+  var names = Object.keys(s.targets);
+  document.getElementById("tgtInfo").textContent = names.length ? "已认识 " + names.length + " 人" : "";
+  document.getElementById("tgts").innerHTML = names.length
+    ? names.map(function(k){
+        var t = s.targets[k];
+        return '<div class="row"><div class="ic">'+(s.threads[threadId(k,"dm")] ? s.threads[threadId(k,"dm")].av : "💠")+'</div>'+
+          '<div class="tx"><b>'+esc(k)+'</b><span>好感 '+Math.round(t.aff)+' · '+(t.bound?'<b class="gold2">已绑定</b>':'未绑定')+
+          (t.file?' · 已有档案':'')+'</span></div>'+
+          '<button class="btn" style="min-height:34px;padding:6px 10px" data-probe="'+esc(k)+'">查</button>'+
+          '<button class="btn" style="min-height:34px;padding:6px 10px" data-bind="'+esc(k)+'">'+(t.bound?'绑✓':'绑定')+'</button>'+
+          '<button class="btn" style="min-height:34px;padding:6px 10px" data-dream="'+esc(k)+'"'+(t.bound?'':' disabled')+'>梦</button></div>';
+      }).join("")
+    : '<div class="empty">还没有认识的人。去剧情里开播、或者等人私信你。</div>';
+}
+function renderDM(){
+  var ids = Object.keys(s.threads).sort(function(a,b){ return (s.threads[b].ts||0) - (s.threads[a].ts||0); });
+  var total = ids.reduce(function(a,k){ return a + (s.threads[k].unread||0); }, 0);
+  document.getElementById("dmInfo").textContent = ids.length ? (total ? total + " 条未读" : "共 " + ids.length + " 个会话") : "";
+  var box = document.getElementById("dmList");
+  if(!ids.length){ box.innerHTML = '<div class="empty">还没有人私信你。<br>开一场直播，人会自己找上来。</div>'; }
+  else {
+    box.innerHTML = ids.map(function(id){
+      var t = s.threads[id];
+      var last = t.msgs.length ? t.msgs[t.msgs.length-1] : null;
+      var prev = last ? (last.who === "你" ? "你：" : (t.type==="group" ? last.who+"：" : "")) + last.t : "（还没有聊天记录）";
+      return '<div class="tl" data-thread="'+esc(id)+'">'+
+        '<div class="av" style="color:'+t.color+'">'+t.av+'</div>'+
+        '<div class="md"><b>'+esc(t.name)+(t.type==="group"?'<span class="gtag">群</span>':'')+'</b><span>'+esc(prev)+'</span></div>'+
+        '<div class="rt">'+hhmm(t.ts)+(t.unread?'<br><span class="un">'+t.unread+'</span>':'')+'</div></div>';
+    }).join("");
+  }
+  var nb = document.getElementById("navDmBadge");
+  if(nb && nb.parentNode) nb.parentNode.removeChild(nb);
+  if(total){
+    var btn = document.querySelector('#nav button[data-page="dm"]');
+    if(btn){
+      var b = document.createElement("span");
+      b.id = "navDmBadge"; b.className = "nb"; b.textContent = total > 99 ? "99+" : total;
+      btn.appendChild(b);
+    }
+  }
+}
+function renderThread(){
+  if(!openThread){ return; }
+  var t = s.threads[openThread];
+  if(!t){ openThread = null; showList(); return; }
+  document.getElementById("dmListWrap").style.display = "none";
+  document.getElementById("dmThread").style.display = "block";
+  document.getElementById("thName").textContent = t.name;
+  document.getElementById("thSub").textContent = t.type === "group" ? "群聊" : (t.desc || "私聊");
+  var box = document.getElementById("threadMsgs");
+  box.innerHTML = t.msgs.map(function(m){
+    if(m.who === "你") return '<div class="msg me"><div class="bb"><div class="bx">'+esc(m.t)+'</div></div></div>';
+    return '<div class="msg"><div class="av" style="color:'+(t.type==="group"?COLORS[hashOf(m.who)%COLORS.length]:t.color)+'">'+
+      (t.type==="group"?AVATARS[hashOf(m.who)%AVATARS.length]:t.av)+'</div>'+
+      '<div class="bb">'+(t.type==="group"?'<div class="who">'+esc(m.who)+'</div>':'')+
+      '<div class="bx">'+esc(m.t)+'</div></div></div>';
+  }).join("");
+  if(busy) box.innerHTML += '<div class="typ"><i></i><i></i><i></i></div>';
+  scrollBottom();
+}
+function showList(){
+  document.getElementById("dmListWrap").style.display = "block";
+  document.getElementById("dmThread").style.display = "none";
+}
+function renderSave(){
+  var d = new Date(s.saved||Date.now());
+  function p2(x){ return ("0"+x).slice(-2); }
+  document.getElementById("saveMeta").innerHTML =
+    "主角：<b>"+esc(s.name)+"</b> · 第 "+s.day+" 天 · "+stage().n+" · "+nf(s.pop)+" 粉<br>"+
+    "本机存档时间："+p2(d.getMonth()+1)+"-"+p2(d.getDate())+" "+p2(d.getHours())+":"+p2(d.getMinutes());
+  document.getElementById("aiState").innerHTML = aiStateText();
+  document.getElementById("helpBox").innerHTML = HELP.replace(/\n/g,"<br>");
+}
+function aiStateText(){
+  if(s.aiMode === "off") return '<span class="tag b">已关闭</span> 用本地规则续写（笨）。';
+  if(s.aiMode === "game_ai") return '<span class="tag ok">game_ai</span> 独立引擎，规则在服务端。需要你部署过 game_ai。';
+  return '<span class="tag ok">chat</span> 复用小千的转发函数（纯转发，不串味）。';
+}
+function aiEndpoint(){
+  if(s.aiMode === "off") return null;
+  return s.aiMode === "game_ai" ? EP_GAME : EP_CHAT;
+}
+function render(){
+  renderMeta();
+  if(page === "story") renderStory();
+  if(page === "sys") renderSys();
+  if(page === "dm"){ renderDM(); if(openThread) renderThread(); }
+  if(page === "save") renderSave();
+  updateComposer();
+  save();
+}
+function go(p){
+  page = p;
+  var pages = document.querySelectorAll(".page");
+  for(var i=0;i<pages.length;i++) pages[i].classList.remove("on");
+  document.getElementById("p-"+p).classList.add("on");
+  var btns = document.querySelectorAll("#nav button");
+  for(var j=0;j<btns.length;j++) btns[j].classList.toggle("on", btns[j].getAttribute("data-page")===p);
+  if(p !== "dm") { openThread = null; showList(); }
+  document.getElementById("main").scrollTop = 0;
+  render();
+}
+function updateComposer(){
+  var show = (page === "story") || (page === "dm" && openThread);
+  document.getElementById("composer").classList.toggle("on", !!show);
+  var inp = document.getElementById("inp");
+  if(page === "dm" && openThread){
+    var t = s.threads[openThread];
+    inp.placeholder = t && t.type === "group" ? "在「" + t.name + "」里说点什么……" : "回复 " + (t?t.name:"") + "……";
+  } else {
+    inp.placeholder = "你要做什么、说什么……";
+  }
+}
+
+/* ============ AI ============ */
+function streamAI(body, onDelta){
+  var ep = aiEndpoint();
+  if(!ep) return Promise.reject(new Error("AI off"));
+  var ctl = new AbortController();
+  var tm = setTimeout(function(){ ctl.abort(); }, 60000);
+  return fetch(ep, {
+    method:"POST", signal: ctl.signal,
+    headers: {"Content-Type":"application/json","Authorization":"Bearer "+SBKEY,"apikey":SBKEY},
+    body: JSON.stringify(body)
+  }).then(function(r){
+    if(!r.ok || !r.body) throw new Error("HTTP " + r.status);
+    var reader = r.body.getReader(), dec = new TextDecoder(), buf = "", out = "";
+    function pump(){
+      return reader.read().then(function(res){
+        if(res.done){ clearTimeout(tm); return out; }
+        buf += dec.decode(res.value, {stream:true});
+        var lines = buf.split("\n");
+        buf = lines.pop();
+        for(var i=0;i<lines.length;i++){
+          var t = lines[i].trim();
+          if(t.indexOf("data:") !== 0) continue;
+          var d = t.slice(5).trim();
+          if(!d || d === "[DONE]") continue;
+          try{
+            var j = JSON.parse(d);
+            var c = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+            if(c){ out += c; if(onDelta) onDelta(out); }
+          }catch(e){}
+        }
+        return pump();
+      });
+    }
+    return pump();
+  }).then(function(v){ clearTimeout(tm); return v; }, function(e){ clearTimeout(tm); throw e; });
+}
+
+var ENGINE_CLIENT = "你是中文文字游戏《璀璨野心家》的叙事引擎兼系统。玩家是个只想搞钱搞流量的女主播，绑定了「神豪」系统。世界在虚构的「番茄直播平台」上，两家头部公会：聆音阁（音乐向，规矩多资源硬）、幻夜社（二次元虚拟人设向，自由但天花板低）。\n"+
+"铁律：玩家是绝对主角；所有男角色全员单箭头，绝不写成恋爱，绝不替玩家做决定或写心理活动；不写露骨内容；不写真实人物/平台/公司。一次回复 400 字以内。\n"+
+"输出协议（严格）：\n"+
+"1. 旁白直接写。\n"+
+"2. 系统提示单独一行，以 【系统】 开头。\n"+
+"3. 私聊单独一行，以 【私信·人物名】 开头。\n"+
+"4. 群聊单独一行，以 【群·群名·说话人】 开头。\n"+
+"5. 正式加入公会时单独一行输出 【公会】聆音阁 或 【公会】幻夜社。\n"+
+"6. 最后一行必须是且只是一行：【变更】人气+0, 财富值+0, 情绪值+0, 现金+0, 颜值+0, 才艺+0, 音色+0, 声望+0, 天数+0\n"+
+"   （没变就写 +0，不要省略任何一项；花掉写负数；玩家做过夜/第二天就把 天数+1。这行玩家看不见。）\n"+
+"数值尺度：语音厅一场涨粉几十到几百、收入几十到几百元；团播几百到几千；个播几千到几万；露脸几万到几十万。情绪值每次 10~80。颜值/才艺/音色只在真正学习或系统发放时 +1~3。";
+
+function buildActMsg(text){
+  var l = [];
+  l.push("【玩家】" + s.name);
+  l.push("【第 " + s.day + " 天】");
+  l.push("【当前阶段】" + stage().n);
+  l.push("【人气】" + nf(s.pop));
+  l.push("【财富值】" + nf(s.wealth));
+  l.push("【情绪值】" + Math.floor(s.mood));
+  l.push("【现金】" + nf(s.cash));
+  l.push("【颜值】" + Math.round(s.face) + "　【才艺】" + Math.round(s.art) + "　【音色】" + Math.round(s.voice) + "　【声望】" + Math.round(s.fame));
+  if(s.guild) l.push("【所属公会】" + s.guild);
+  var lk = Object.keys(s.learned);
+  if(lk.length) l.push("【已学课程】" + lk.map(function(k){ return k + " " + s.learned[k] + " 级"; }).join("、"));
+  var bg = Object.keys(s.items).filter(function(k){ return s.items[k] > 0; });
+  if(bg.length) l.push("【持有物品】" + bg.map(function(k){ return k + "×" + s.items[k]; }).join("、"));
+  var ppl = Object.keys(s.targets);
+  if(ppl.length) l.push("【已登场人物】" + ppl.join("、"));
+  if(s.recent.length) l.push("\n【最近发生的事（保持连贯）】\n" + s.recent.join("\n").slice(0,1500));
+  l.push("\n【玩家输入】\n" + text);
+  return l.join(" ");
+}
+
+function callAct(text, onDelta){
+  var ep = aiEndpoint();
+  if(!ep) return Promise.reject(new Error("AI off"));
+  var body;
+  if(s.aiMode === "game_ai"){
+    body = { action:"act", model:MODEL, payload: {
+      state: {name:s.name, day:s.day, stage:stage().n, pop:nf(s.pop), wealth:nf(s.wealth),
+        mood:Math.floor(s.mood), cash:nf(s.cash), face:Math.round(s.face), art:Math.round(s.art),
+        voice:Math.round(s.voice), fame:Math.round(s.fame), guild:s.guild,
+        items: bgNames(), people: Object.keys(s.targets)},
+      recent: s.recent.slice(-8), text: text } };
+  } else {
+    body = { model:MODEL, messages:[{role:"system",content:ENGINE_CLIENT},{role:"user",content:buildActMsg(text)}], stream:true };
+  }
+  return streamAI(body, onDelta);
+}
+function bgNames(){
+  return Object.keys(s.items).filter(function(k){ return s.items[k] > 0; }).map(function(k){ return k + "×" + s.items[k]; });
+}
+function callDM(th, text, onDelta){
+  var ep = aiEndpoint();
+  if(!ep) return Promise.reject(new Error("AI off"));
+  if(s.aiMode === "game_ai"){
+    return streamAI({ action:"dm", model:MODEL, payload: {
+      state: {name:s.name, day:s.day, stage:stage().n, pop:nf(s.pop), wealth:nf(s.wealth),
+        mood:Math.floor(s.mood), cash:nf(s.cash), face:Math.round(s.face), art:Math.round(s.art),
+        voice:Math.round(s.voice), fame:Math.round(s.fame), guild:s.guild},
+      thread: { name: th.name, type: th.type==="group"?"群聊":"私聊", desc: th.desc,
+        history: th.msgs.slice(-10).map(function(m){ return m.who + "：" + m.t; }) },
+      text: text } }, onDelta);
+  }
+  var hist = th.msgs.slice(-10).map(function(m){ return m.who + "：" + m.t; }).join("\n");
+  var msg = "【玩家】" + s.name + "，第 " + s.day + " 天，当前阶段「" + stage().n + "」，人气 " + nf(s.pop) + "。\n" +
+    "\n【当前会话】" + th.name + "（" + (th.type==="group"?"群聊":"私聊") + "）" +
+    (th.desc ? "\n【设定】" + th.desc : "") +
+    (hist ? "\n\n【最近聊天记录】\n" + hist : "") +
+    "\n\n【玩家说的话】\n" + text;
+  return streamAI({ model:MODEL, messages:[{role:"system",content:ENGINE_CLIENT},{role:"user",content:msg}], stream:true }, onDelta);
+}
+
+var DELTA_MAP = {"人气":"pop","财富值":"wealth","情绪值":"mood","现金":"cash","颜值":"face","才艺":"art","音色":"voice","声望":"fame","天数":"day"};
+function applyDelta(str){
+  var changes = [];
+  String(str).split(/[,，;；]/).forEach(function(seg){
+    var m = seg.match(/([^\d\+\-]+?)\s*([\+\-])?\s*(\d+)/);
+    if(!m) return;
+    var key = m[1].replace(/[【】\s:：]/g,"");
+    var val = parseInt(m[3],10) * (m[2] === "-" ? -1 : 1);
+    var f = DELTA_MAP[key];
+    if(!f || !val) return;
+    s[f] += val;
+    changes.push(key + (val>0?" +":" ") + val);
+  });
+  if(changes.length){
+    s.mood = Math.max(0, s.mood);
+    s.cash = Math.max(0, s.cash);
+    s.wealth = Math.max(0, s.wealth);
+    s.pop = Math.max(0, s.pop);
+    s.face = clamp(s.face,0,100); s.art = clamp(s.art,0,100);
+    s.voice = clamp(s.voice,0,100); s.fame = clamp(s.fame,0,100);
+    var d = DELTA_MAP;
+    if(changes.join(" ").indexOf("天数") >= 0){
+      var tipIn = s.tipDaily;
+      s.tip += tipIn;
+      changes.push("打赏金 +" + nf(tipIn));
+    }
+    pushStory("dlt", "◈ " + changes.join("　"));
+  }
+  // 阶段
+  while(s.stage < STAGES.length-1 && s.pop >= STAGES[s.stage+1].pop){
+    if(s.stage === 2 && s.face < 60) break;
+    s.stage++;
+    pushStory("sys", "【系统】阶段晋级：你现在是「" + stage().n + "」主播了。");
+  }
+  if(s.stage === 2 && s.pop >= STAGES[3].pop && s.face >= 60){
+    pushStory("sys", "【系统】露脸条件已满足。写一句「开摄像头」试试。");
+  }
+  s.fame = clamp(s.fame,0,100);
+  s.stage = clamp(s.stage,0,STAGES.length-1);
+}
+
+function parseAI(raw){
+  var out = {nar:[], dm:[], grp:[], sys:[], guild:null};
+  var lines = String(raw||"").split("\n");
+  for(var i=0;i<lines.length;i++){
+    var L = lines[i].replace(/\s+$/,"");
+    var T = L.trim();
+    if(!T) continue;
+    if(T.indexOf("【变更】") === 0){ out.delta = T.slice(4); continue; }
+    if(T.indexOf("【公会】") === 0){ out.guild = T.slice(4).trim(); continue; }
+    if(T.indexOf("【系统】") === 0){ out.sys.push(T.slice(4).trim()); continue; }
+    var d = T.match(/^【私信[·・|]([^】]+)】\s*(.*)$/);
+    if(d){ out.dm.push({name:d[1].trim(), text:d[2].trim()}); continue; }
+    var g = T.match(/^【群[·・|]([^·・|】]+)[·・|]([^】]+)】\s*(.*)$/);
+    if(g){ out.grp.push({group:g[1].trim(), who:g[2].trim(), text:g[3].trim()}); continue; }
+    out.nar.push(L);
+  }
+  return out;
+}
+
+function deliver(parsed, opts){
+  opts = opts || {};
+  var text = parsed.nar.join("\n").trim();
+  if(text) pushStory("nar", text);
+  parsed.sys.forEach(function(x){ pushStory("sys", "【系统】" + x); });
+
+  var touched = {};
+  parsed.dm.forEach(function(m){
+    if(!m.name) return;
+    var th = ensureThread(m.name, "dm");
+    addMsg(th, m.name, m.text);
+    touched[th.id] = true;
+    if(m.name !== "神豪" && !s.targets[m.name]){
+      s.targets[m.name] = {aff: ri(2,8), bound:false, file:""};
+    } else if(s.targets[m.name]){
+      s.targets[m.name].aff = clamp(s.targets[m.name].aff + 1, 0, 100);
+    }
+  });
+  parsed.grp.forEach(function(g){
+    if(!g.group) return;
+    var th = ensureThread(g.group, "group");
+    addMsg(th, g.who || "某人", g.text);
+    touched[th.id] = true;
+  });
+
+  Object.keys(touched).forEach(function(id){
+    var th = s.threads[id];
+    var isOpen = (page === "dm" && openThread === id);
+    if(isOpen){ th.unread = 0; }
+    else {
+      th.unread = (th.unread||0) + 1;
+      pushStory("hint", "💬 " + (th.type==="group" ? "群「"+th.name+"」" : th.name) + " 给你发了消息", id);
+    }
+  });
+
+  if(parsed.guild){
+    var gname = GUILDS.filter(function(g){ return parsed.guild.indexOf(g) >= 0; })[0];
+    if(gname && s.guild !== gname){
+      s.guild = gname;
+      pushStory("sys", "【系统】已加入公会：**" + gname + "**\n" + GUILD_DESC[gname]);
+      toast("加入 " + gname, "g");
+    }
+  }
+
+  if(parsed.delta) applyDelta(parsed.delta);
+  else if(!Object.keys(touched).length) {
+    // 没有结算行也允许，避免卡死
+  }
+
+  pushRecent("【" + s.name + "】" + (opts.echo || ""));
+  var summary = [];
+  if(text) summary.push(text.slice(0, 260));
+  parsed.dm.slice(0,4).forEach(function(m){ summary.push(m.name + "：" + m.text); });
+  parsed.sys.slice(0,2).forEach(function(x){ summary.push("系统：" + x); });
+  if(summary.length) pushRecent(summary.join(" / "));
+
+  save(); render();
+}
+
+function localEngine(text){
+  var t = text || "";
+  var out = "";
+  var delta = {人气:0, 财富值:0, 情绪值:0, 现金:0, 颜值:0, 才艺:0, 音色:0, 声望:0, 天数:0};
+  if(/刷|打赏金|给自己/.test(t)){
+    var amt = Math.min(s.tip, s.tip > 0 ? pick([10000, 50000, s.tip]) : 0);
+    if(amt >= 10000){
+      s.tip -= amt;
+      var gain = Math.floor(Math.pow(amt/60, 0.85) * clamp(0.9 + s.face/220 + s.voice/220, 0.9, 2.4));
+      var back = amt * (s.flags.crit || 1); s.flags.crit = 0;
+      delta.人气 += gain; delta.现金 += back; delta.财富值 += back;
+      out = "你把打赏金导进礼物系统，用自己的号，一笔一笔刷在自己身上。\n\n礼物条一路顶上去，榜一那栏是你的小号。弹幕炸了，「主播自己刷自己？」「有钱真好」。\n\n你看着人数往上跳，没解释，也不打算解释。";
+    } else {
+      out = "打赏金不够。再攒攒。";
+    }
+  } else if(/开播|直播|唱|说话|连麦|pk|PK/.test(t)){
+    var base = Math.max(s.face*0.6 + s.art*0.7 + s.voice*0.5, 6);
+    var gain2 = Math.floor(base * (s.stage+1) * rnd(6,16));
+    var cash2 = Math.floor(rnd(60,260) * (s.stage+1));
+    delta.人气 += gain2; delta.现金 += cash2; delta.财富值 += cash2; delta.情绪值 += ri(10,40);
+    out = "你按下开播。\n\n前三十秒是冷的，只有几个老粉在刷「来了」。第三分钟，有人把你的一段转成了切片。\n\n人数开始往上跳。" +
+      (/唱/.test(t) ? "你清唱了一段，没有伴奏，气息压在最后一句上——弹幕停了两秒，然后刷了一屏。" : "") +
+      "\n\n下播的时候，你看了眼数据，比你预想的好。";
+    if(Math.random() < 0.4){
+      var nm = pick(["早睡的老公粉","路过的听众","隔壁厅的同行"]);
+      out += "\n\n【私信·" + nm + "】刚那一段能再发我一遍吗，我没听够。";
+    }
+  } else if(/休息|睡|过夜|第.*天/.test(t)){
+    var tipIn = s.tipDaily; s.tip += tipIn;
+    delta.天数 += 1; delta.情绪值 += 10;
+    out = "你关灯，躺下。手机屏幕最后亮了一下——系统提示打赏金已到账：" + nf(tipIn) + " 元。\n\n明天还得继续。";
+  } else {
+    delta.人气 += ri(5, 60); delta.情绪值 += ri(5, 20);
+    out = "你做了这件事。\n\n世界安静地给出了它的反应——不算好，也不算坏。但数据比昨天动了一点。";
+  }
+  out += "\n\n【变更】" + Object.keys(delta).map(function(k){ return k + (delta[k]>0?"+":"") + delta[k]; }).join(", ");
+  return out;
+}
+function localDMReply(th, text){
+  var isGroup = th.type === "group";
+  var reply;
+  if(isGroup){
+    var others = ["管理员","话痨粉","沉默的榜二","路过的同行"];
+    reply = others.slice(0, ri(2,3)).map(function(w){
+      return "【群·" + th.name + "·" + w + "】" + pick(["确实。","这话我认。","+1","你别说了，我先笑一下。","主播在的，能不能说句话"]);
+    }).join("\n");
+  } else {
+    var kind = /钱|报价|商单|合作|签/.test(text) ? "biz" : (/在吗|你好/.test(text) ? "fan" : "fan");
+    reply = "【私信·" + th.name + "】" + pick(DM_POOL[kind]);
+  }
+  return "你说完，停了两秒。\n\n" + reply + "\n\n【变更】人气+0, 财富值+0, 情绪值+0, 现金+0, 颜值+0, 才艺+0, 音色+0, 声望+0, 天数+0";
+}
+
+/* ============ 发送 ============ */
+function sendAction(text){
+  if(busy || !text) return;
+  busy = true;
+  document.getElementById("send").disabled = true;
+  pushStory("me", text);
+  pushRecent("【玩家】" + text.slice(0, 300));
+  renderStory();
+  var ph = document.createElement("div");
+  ph.className = "turn"; ph.id = "typing";
+  ph.innerHTML = '<div class="typ"><i></i><i></i><i></i></div>';
+  document.getElementById("story").appendChild(ph);
+  scrollBottom();
+
+  callAct(text).then(function(raw){
+    var p = parseAI(raw);
+    killTyping();
+    deliver(p, {echo:text});
+  }).catch(function(){
+    killTyping();
+    var p = parseAI(localEngine(text));
+    deliver(p, {echo:text});
+    toast("AI 没连上，用了本地演算","b");
+  }).then(function(){
+    busy = false;
+    document.getElementById("send").disabled = false;
+  });
+}
+function sendThread(text){
+  (function(tid){
+    if(busy || !text || !tid) return;
+    var th = s.threads[tid];
+    if(!th) return;
+    busy = true;
+    document.getElementById("send").disabled = true;
+    addMsg(th, "你", text);
+    th.unread = 0;
+    renderThread();
+    callDM(th, text).then(function(raw){
+      var p = parseAI(raw);
+      deliverThread(p, th);
+    }).catch(function(){
+      var p = parseAI(localDMReply(th, text));
+      deliverThread(p, th);
+      toast("AI 没连上，用了本地演算","b");
+    }).then(function(){
+      busy = false;
+      document.getElementById("send").disabled = false;
+      renderThread();
+    });
+  })(openThread);
+}
+function deliverThread(p, th){
+  var text = p.nar.join("\n").trim();
+  if(text) addMsg(th, th.type==="group" ? "旁白" : th.name, text);
+  p.sys.forEach(function(x){ pushStory("sys", "【系统】" + x); });
+  p.dm.forEach(function(m){
+    var t2 = ensureThread(m.name, "dm");
+    addMsg(t2, m.name, m.text);
+    if(m.name === th.name || t2.id === th.id){ th.unread = 0; }
+    else { t2.unread = (t2.unread||0)+1; }
+    if(m.name !== "神豪" && !s.targets[m.name]) s.targets[m.name] = {aff:ri(2,8), bound:false, file:""};
+  });
+  p.grp.forEach(function(g){
+    var t3 = ensureThread(g.group, "group");
+    addMsg(t3, g.who||"某人", g.text);
+    if(t3.id === th.id) th.unread = 0; else t3.unread = (t3.unread||0)+1;
+  });
+  if(p.guild){
+    var gname = GUILDS.filter(function(g){ return p.guild.indexOf(g) >= 0; })[0];
+    if(gname && s.guild !== gname){ s.guild = gname; toast("加入 "+gname,"g"); }
+  }
+  if(p.delta) applyDelta(p.delta);
+  if(s.targets[th.name] && th.type === "dm") s.targets[th.name].aff = clamp(s.targets[th.name].aff + 1, 0, 100);
+  save(); render();
+}
+function killTyping(){ var e = document.getElementById("typing"); if(e && e.parentNode) e.parentNode.removeChild(e); }
+
+/* ============ 目标功能 ============ */
+function doProbe(name){
+  if(s.wealth < 10000){ toast("探查要 1 万财富值。","b"); return; }
+  s.wealth -= 10000;
+  var th = s.threads[threadId(name,"dm")];
+  var desc = th ? th.desc : "";
+  var fb = "【目标探查完成】\n姓名：" + name + "\n身份：不明\n年龄：不详\n与你的关系：观众\n综合评分：" + ri(55,95) +
+    "/100\n威胁度：" + ri(20,80) + "/100\n可利用度：" + ri(30,90) + "/100\n身家估值：" + nf(ri(500,9000)) + " 万\n" +
+    "性格画像：还需要更多接触。\n软肋：——\n对你的态度：藏着。\n攻略建议：先把他变成你的流量。";
+  openModal({title:"🔍 探查 · " + name, sub:"消耗 1 万财富值",
+    body:"正在扫描……", opts:[]});
+  aiProbe(name, desc).then(function(txt){
+    s.targets[name].file = (txt||fb).trim();
+    save(); render();
+    openModal({title:"🔍 " + name + " · 档案", sub:"系统探查结果",
+      body: s.targets[name].file, opts:[{t:"收起", fn:function(){}}]});
+  }).catch(function(){
+    s.targets[name].file = fb;
+    save(); render();
+    openModal({title:"🔍 " + name + " · 档案", sub:"本地演算（AI 未连上）",
+      body: fb, opts:[{t:"收起", fn:function(){}}]});
+  });
+}
+function aiProbe(name, desc){
+  var ep = aiEndpoint();
+  if(!ep) return Promise.reject(new Error("off"));
+  var msg = "任务：【目标探查】。给一个现实中的目标出档案。严格按格式，不要多余解释、不要代码块：\n【目标探查完成】\n姓名：\n身份：\n年龄：\n与你的关系：\n综合评分：X/100\n威胁度：X/100\n可利用度：X/100\n身家估值：\n性格画像：\n软肋：\n对你的态度：\n攻略建议：\n\n目标：" + name + (desc ? "（" + desc + "）" : "（玩家没给描述，你自己合理发挥，不要写真实名人）");
+  if(s.aiMode === "game_ai"){
+    return streamAI({action:"act", model:MODEL, payload:{state:{name:s.name, day:s.day, stage:stage().n, pop:nf(s.pop)}, text:msg}});
+  }
+  return streamAI({model:MODEL, messages:[{role:"system",content:"你是中文主播模拟游戏的系统，负责输出目标档案。不要写真实人物。"},{role:"user",content:msg}], stream:true});
+}
+function doBind(name){
+  var t = s.targets[name];
+  if(!t || t.bound) return;
+  var used = Object.keys(s.targets).filter(function(k){ return s.targets[k].bound; }).length;
+  var free = used < 3;
+  if(!free && s.wealth < 500000){ toast("绑定槽满了，开新槽要 50 万财富值。","b"); return; }
+  openModal({title:"🔗 绑定 " + name, sub: free ? "使用一个空闲槽位（免费，共 3 个）" : "槽位已满，花 50 万财富值开新槽",
+    body:"绑定之后你就能入他的梦。\n你不需要他的感情，你只需要他的资源。",
+    opts:[
+      {t:"确认绑定", fn:function(){
+        if(!free) s.wealth -= 500000;
+        t.bound = true; t.aff = clamp(t.aff+3,0,100);
+        pushStory("sys","【系统】已绑定目标：" + name);
+        toast("绑定成功","g"); save(); render();
+      }},
+      {t:"再想想", fn:function(){}}
+    ]});
+}
+function doDream(name){
+  var t = s.targets[name];
+  if(!t || !t.bound){ toast("先绑定他。","b"); return; }
+  if(s.wealth < 100000){ toast("入梦要 10 万财富值。","b"); return; }
+  var th = s.threads[threadId(name,"dm")];
+  var box = document.getElementById("mbox");
+  box.innerHTML = '<h2>🌌 入梦 · ' + esc(name) + '</h2>' +
+    '<div class="sub">10 万财富值 · 梦境内容你自己设定</div>' +
+    '<textarea class="inp" id="dreamIn" placeholder="写下你要设的梦。\n\n设定越贴合他的性格，你越能掌控这场梦。太离谱的话，梦会崩。"></textarea>' +
+    '<button class="mopt" id="goBtn" style="background:linear-gradient(135deg,#7a4fd6,#c94f9b);border:none">进入梦境</button>' +
+    '<button class="mopt" id="clBtn">算了</button>';
+  document.getElementById("clBtn").onclick = closeModal;
+  document.getElementById("goBtn").onclick = function(){
+    var dt = (document.getElementById("dreamIn").value||"").trim();
+    if(dt.length < 4){ toast("至少写一句。","b"); return; }
+    s.wealth -= 100000;
+    closeModal();
+    busy = true;
+    var ph = document.createElement("div"); ph.className="turn"; ph.id="typing";
+    ph.innerHTML = '<div class="typ"><i></i><i></i><i></i></div>';
+    var sc = document.getElementById("story"); sc.appendChild(ph);
+    pushStory("me", "（入梦）" + dt);
+    go("story"); scrollBottom();
+    aiDream(name, th ? th.desc : "", dt).then(function(raw){
+      killTyping();
+      var p = parseAI(raw);
+      var ctrl = 70;
+      var m = String(raw).match(/【主导权：\s*(\d{1,3})\s*】/);
+      if(m) ctrl = clamp(parseInt(m[1],10),0,100);
+      p.nar = [p.nar.join("\n").replace(/【主导权：\s*\d{1,3}\s*】/g,"").trim()];
+      var gain = ctrl>=80?ri(5,9):(ctrl>=50?ri(2,5):ri(0,2));
+      t.aff = clamp(t.aff+gain,0,100);
+      if(s.targets[name]) s.targets[name].aff = t.aff;
+      deliver(p, {echo:"入梦" + name});
+      pushStory("sys","【系统】主导权 " + ctrl + "/100 · 好感 +" + gain + (ctrl<50 ? "　（梦境出现裂痕）" : ""));
+      if(ctrl < 50) s.mood = Math.max(0, s.mood-40);
+      pushRecent("入梦" + name + "，主导权" + ctrl);
+      save(); render();
+    }).catch(function(){
+      killTyping();
+      var p = parseAI("梦搭起来了。\n\n" + name + "站在你设的场景里，看了你一眼，像早就来过。\n\n「你连梦里都不肯输。」\n\n【主导权：75】\n\n【变更】人气+0, 财富值+0, 情绪值+20, 现金+0, 颜值+0, 才艺+0, 音色+0, 声望+0, 天数+0");
+      deliver(p, {echo:"入梦" + name});
+      t.aff = clamp(t.aff+3,0,100);
+      toast("AI 没连上，用了本地演算","b");
+    }).then(function(){ busy = false; });
+  };
+  document.getElementById("modal").classList.add("on");
+}
+function aiDream(name, desc, dt){
+  var ep = aiEndpoint();
+  if(!ep) return Promise.reject(new Error("off"));
+  var sys = ENGINE_CLIENT + "\n\n任务：【入梦】。玩家花财富值进入一个目标的梦境，并自己设定了梦境内容。把这场梦演出来：先顺着玩家的设定走，让梦境成立；再让目标做出符合他性格的反应。如果玩家设定太离谱（与该角色身份性格严重冲突、出现超现实力量或控制他人意志），让梦境出现裂痕。结尾另起一行，只输出：【主导权：X】（0-100，合理 80-100，稍飘 50-79，离谱 0-49）。";
+  var msg = "目标：" + name + (desc ? "（" + desc + "）" : "") + "\n\n【玩家设定的梦境内容】\n" + dt;
+  if(s.aiMode === "game_ai"){
+    return streamAI({action:"dm", model:MODEL, payload:{state:{name:s.name,day:s.day,stage:stage().n,pop:nf(s.pop)}, thread:{name:"入梦·"+name, type:"私聊", desc:desc, history:[]}, text:"（入梦）" + dt}});
+  }
+  return streamAI({model:MODEL, messages:[{role:"system",content:sys},{role:"user",content:msg}], stream:true});
+}
+
+/* ============ 模态 ============ */
+function openModal(o){
+  var box = document.getElementById("mbox");
+  var html = '<h2>'+esc(o.title)+'</h2>';
+  if(o.sub) html += '<div class="sub">'+esc(o.sub)+'</div>';
+  html += '<div class="out">'+esc(o.body)+'</div>';
+  box.innerHTML = html;
+  (o.opts||[]).forEach(function(op){
+    var b = document.createElement("button");
+    b.className = "mopt";
+    b.textContent = op.t;
+    b.onclick = function(){ closeModal(); try{ op.fn(); }catch(e){} save(); render(); };
+    box.appendChild(b);
+  });
+  document.getElementById("modal").classList.add("on");
+}
+function closeModal(){ document.getElementById("modal").classList.remove("on"); }
+
+function exportSave(){
+  var code = "XQ3-" + b64e(JSON.stringify(s));
+  var box = document.getElementById("mbox");
+  box.innerHTML = '<h2>📤 存档码</h2><div class="sub">复制下面这串，粘到备忘录 / 发给自己。</div>' +
+    '<textarea class="inp" id="codeOut" readonly></textarea>' +
+    '<button class="mopt" id="cpBtn">📋 复制</button><button class="mopt" id="clBtn">关闭</button>';
+  document.getElementById("codeOut").value = code;
+  document.getElementById("cpBtn").onclick = function(){
+    var ta = document.getElementById("codeOut");
+    ta.select(); ta.setSelectionRange(0,999999);
+    var ok = false; try{ ok = document.execCommand("copy"); }catch(e){}
+    if(!ok && navigator.clipboard){ navigator.clipboard.writeText(code).then(function(){ toast("已复制","ok"); }, function(){ toast("请长按全选复制","b"); }); }
+    else toast(ok?"已复制到剪贴板":"请长按全选复制", ok?"ok":"b");
+  };
+  document.getElementById("clBtn").onclick = closeModal;
+  document.getElementById("modal").classList.add("on");
+}
+function importSave(){
+  var box = document.getElementById("mbox");
+  box.innerHTML = '<h2>📥 导入存档码</h2><div class="sub">粘贴存档码，覆盖当前进度。</div>' +
+    '<textarea class="inp" id="codeIn" placeholder="XQ3-..."></textarea>' +
+    '<button class="mopt" id="okBtn" style="background:linear-gradient(135deg,#7a4fd6,#c94f9b);border:none">确认导入</button>' +
+    '<button class="mopt" id="clBtn">取消</button>';
+  document.getElementById("okBtn").onclick = function(){
+    var raw = (document.getElementById("codeIn").value||"").trim();
+    if(!/^XQ[123]-/.test(raw)){ toast("存档码格式不对","b"); return; }
+    try{
+      var d = JSON.parse(b64d(raw.slice(4)));
+      if(!d || !d.name) throw 0;
+      var base = newState(d.name);
+      for(var k in base){ if(!(k in d)) d[k] = base[k]; }
+      d.items=d.items||{}; d.learned=d.learned||{}; d.threads=d.threads||{};
+      d.targets=d.targets||{}; d.flags=d.flags||{}; d.story=d.story||[]; d.recent=d.recent||[];
+      s = d; closeModal(); toast("存档已恢复","ok"); render(); go("story");
+    }catch(e){ toast("存档码损坏，导不了","b"); }
+  };
+  document.getElementById("clBtn").onclick = closeModal;
+  document.getElementById("modal").classList.add("on");
+}
+function rename(){
+  var box = document.getElementById("mbox");
+  box.innerHTML = '<h2>✏️ 改名字</h2><div class="sub">你现在叫「'+esc(s.name)+'」</div>' +
+    '<input class="inp" id="nmIn" maxlength="8" value="'+esc(s.name)+'">' +
+    '<button class="mopt" id="okBtn" style="background:linear-gradient(135deg,#7a4fd6,#c94f9b);border:none">确认</button>' +
+    '<button class="mopt" id="clBtn">取消</button>';
+  document.getElementById("okBtn").onclick = function(){
+    var v = (document.getElementById("nmIn").value||"").trim();
+    if(!v){ toast("名字不能空","b"); return; }
+    s.name = v; closeModal(); toast("改名成功","ok"); render();
+  };
+  document.getElementById("clBtn").onclick = closeModal;
+  document.getElementById("modal").classList.add("on");
+}
+function reset(){
+  var box = document.getElementById("mbox");
+  box.innerHTML = '<h2>🗑 重开一局</h2><div class="sub">当前进度全部清空，不可恢复。</div><p>建议先导一次存档码。</p>' +
+    '<button class="mopt" id="noBtn">我再想想</button>' +
+    '<button class="mopt" id="yesBtn" style="color:#ff9aa6">确认清空重开</button>';
+  document.getElementById("noBtn").onclick = closeModal;
+  document.getElementById("yesBtn").onclick = function(){
+    try{ localStorage.removeItem(KEY); }catch(e){}
+    closeModal();
+    s = newState(s.name);
+    startStory(true);
+    render(); go("story");
+  };
+  document.getElementById("modal").classList.add("on");
+}
+function newGroup(){
+  var box = document.getElementById("mbox");
+  box.innerHTML = '<h2>👥 建一个群</h2><div class="sub">粉丝群、主播互助群、黑粉群……都行</div>' +
+    '<input class="inp" id="gpIn" maxlength="16" placeholder="群名，比如「弥宝后援团」">' +
+    '<button class="mopt" id="okBtn" style="background:linear-gradient(135deg,#7a4fd6,#c94f9b);border:none">建群</button>' +
+    '<button class="mopt" id="clBtn">算了</button>';
+  document.getElementById("clBtn").onclick = closeModal;
+  document.getElementById("okBtn").onclick = function(){
+    var n = (document.getElementById("gpIn").value||"").trim();
+    if(!n){ toast("总得有个群名。","b"); return; }
+    var th = ensureThread(n, "group");
+    addMsg(th, "系统", "你建了「" + n + "」。");
+    closeModal();
+    pushStory("sys", "【系统】群「" + n + "」已创建。进去说句话吧。");
+    toast("群已创建","g");
+    openThread = th.id; save(); render(); go("dm");
+  };
+  document.getElementById("modal").classList.add("on");
+}
+
+/* ============ 首屏 ============ */
+function startStory(isNew){
+  if(isNew){
+    s.story = [];
+    pushStory("sys", "【系统】绑定成功。宿主：" + s.name + "。\n每日打赏金 10000 元已入账。\n你现在坐在一间租来的小屋里，麦克风是拼来的，灯是借的。\n\n去开一场直播吧。什么都可以，先让人听见你。");
+    var gs = ensureThread("神豪", "dm", "绑定你的那串声音。它坚持说自己只是系统。");
+    addMsg(gs, "神豪", "宿主。你今天的野心值，我看过了。\n别急着谢我。先去开播——我想看你被人看见的样子。");
+    pushStory("hint", "💬 「神豪」给你发了第一条私信", gs.id);
+    gs.unread = 1;
+  }
+  if(!s.story.length){
+    pushStory("nar", "你坐在出租屋的地板上，面前是拼来的麦克风和借来的补光灯。\n空调外机在响，楼下有人在吵架。\n\n但你今天要开播。");
+  }
+}
+
+function aiModeCycle(){
+  var order = ["chat","game_ai","off"];
+  s.aiMode = order[(order.indexOf(s.aiMode)+1) % order.length];
+  toast("AI 通道：" + (s.aiMode==="off"?"已关闭":s.aiMode),"g");
+  save(); render();
+}
+function aiTest(){
+  openModal({title:"🧪 测试连通", sub:"正在请求……", body:"…", opts:[]});
+  var t0 = Date.now();
+  var ep = aiEndpoint();
+  if(!ep){ openModal({title:"🧪 测试结果", sub:"AI 已关闭", body:"当前是本地演算模式。", opts:[{t:"知道了", fn:function(){}}]}); return; }
+  var p;
+  if(s.aiMode === "game_ai") p = streamAI({action:"act", model:MODEL, payload:{state:{name:s.name,day:s.day,stage:stage().n}, text:"只回四个字：系统在线。"}});
+  else p = streamAI({model:MODEL, messages:[{role:"system",content:"你是系统。只回四个字：系统在线。"},{role:"user",content:"测试"}], stream:true});
+  p.then(function(txt){
+    openModal({title:"🧪 通了", sub:((Date.now()-t0)/1000).toFixed(1) + " 秒 · " + s.aiMode,
+      body: (txt||"（空回复）").slice(0,300), opts:[{t:"好", fn:function(){}}]});
+  }).catch(function(e){
+    openModal({title:"🧪 不通", sub:"通道 " + s.aiMode,
+      body: "错误：" + (e && e.message ? e.message : "未知") + "\n\n如果用的是 game_ai，先确认已在 Supabase 部署；否则切回 chat。",
+      opts:[{t:"知道了", fn:function(){}}]});
+  });
+}
+
+function tipModal(){
+  openModal({
+    title:"✦ 开始",
+    sub:"文游 · 没有按钮，直接写",
+    body:"你要做什么、说什么，写在下面的输入框里就行。\n\n系统会自己算涨粉、进账、弹幕、私信、群聊。\n\n颜值 / 才艺 / 音色 不能靠刷——去「系统」页抽取课程。\n\n先试一句：「开播，唱一首。」",
+    opts:[{t:"开始", fn:function(){
+      var d = drawOne(true); s.draws++;
+      applyDraw(d);
+      pushStory("sys", "【系统】新手补给已发放：声乐教学 · C 级\n\n使用后可开展教学领域，名师指导，直到完成 C 级课程考核结束，可随时退出。领域内时间与你的位面不同步——教学过程中你的时间不变。\n\n考核通过后，才艺 +3。");
+      toast("已发放：声乐教学 C 级","g");
+      save(); render();
+    }}]
+  });
+}
+
+function intro(){
+  var box = document.getElementById("mbox");
+  box.innerHTML = '<h2>✦ 璀璨野心家</h2><div class="sub">主播文游 · 神豪系统</div>' +
+    '<p>你是一个美貌配不上野心的女人。\n\n你不想要爱情，不想要同情，只想要钱、要流量、要所有人抬头看你。\n\n某天，一个叫「神豪」的系统绑定了你。它说：钱不是问题，问题是你敢不敢要。</p>' +
+    '<input class="inp" id="nmIn" maxlength="8" placeholder="给自己取个名字" value="星晚">' +
+    '<div class="tiny" style="margin-bottom:11px">选择你的起点：</div>' +
+    '<button class="mopt" id="t1">💄 天生狐狸精 <span class="tiny">（颜值 20 / 才艺 4 / 音色 10 / 伪装 85）</span></button>' +
+    '<button class="mopt" id="t2">🎼 声音怪物 <span class="tiny">（颜值 12 / 才艺 8 / 音色 18 / 伪装 85）</span></button>' +
+    '<button class="mopt" id="t3">🧠 话术鬼才 <span class="tiny">（颜值 12 / 才艺 6 / 音色 10 / 伪装 95 / 声望 8）</span></button>';
+  document.getElementById("modal").classList.add("on");
+  function start(t){
+    var nm = (document.getElementById("nmIn").value||"").trim() || "星晚";
+    s = newState(nm);
+    if(t===1){ s.face=20; s.art=4; s.voice=10; s.dis=85; }
+    if(t===2){ s.face=12; s.art=8; s.voice=18; s.dis=85; }
+    if(t===3){ s.face=12; s.art=6; s.voice=10; s.dis=95; s.fame=8; }
+    closeModal();
+    startStory(true);
+    render(); go("story");
+    setTimeout(tipModal, 400);
+  }
+  document.getElementById("t1").onclick = function(){ start(1); };
+  document.getElementById("t2").onclick = function(){ start(2); };
+  document.getElementById("t3").onclick = function(){ start(3); };
+}
+
+function stars(){
+  var c = document.getElementById("stars"), x = c.getContext("2d");
+  function size(){ c.width = innerWidth; c.height = innerHeight; }
+  size(); addEventListener("resize", size);
+  var pts = [];
+  for(var i=0;i<60;i++) pts.push({x:Math.random(), y:Math.random(), r:Math.random()*1.4+0.3, s:Math.random()*0.3+0.05, p:Math.random()*6.28});
+  function tick(t){
+    x.clearRect(0,0,c.width,c.height);
+    for(var i=0;i<pts.length;i++){
+      var p = pts[i];
+      var a = 0.26 + Math.sin(t/1400 + p.p)*0.24;
+      x.beginPath(); x.arc(p.x*c.width, p.y*c.height, p.r, 0, 6.283);
+      x.fillStyle = "rgba(220,205,255," + Math.max(0.05,a) + ")"; x.fill();
+      p.y -= p.s/1000;
+      if(p.y < -0.02){ p.y = 1.02; p.x = Math.random(); }
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function bind(){
+  var nav = document.querySelectorAll("#nav button");
+  for(var i=0;i<nav.length;i++){
+    (function(b){ b.onclick = function(){ go(b.getAttribute("data-page")); }; })(nav[i]);
+  }
+  var inp = document.getElementById("inp");
+  function autosize(){ inp.style.height = "auto"; inp.style.height = Math.min(inp.scrollHeight, 104) + "px"; }
+  inp.addEventListener("input", autosize);
+  inp.addEventListener("keydown", function(e){
+    if(e.key === "Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); doSend(); }
+  });
+  document.getElementById("send").onclick = doSend;
+  function doSend(){
+    var v = (inp.value||"").trim();
+    if(!v) return;
+    inp.value = ""; autosize();
+    if(page === "dm" && openThread) sendThread(v);
+    else sendAction(v);
+  }
+  document.getElementById("d1").onclick = function(){ doDraw(1); };
+  document.getElementById("d10").onclick = function(){ doDraw(10); };
+  document.getElementById("newGroup").onclick = newGroup;
+  document.getElementById("backBtn").onclick = function(){ openThread = null; showList(); render(); };
+  document.getElementById("a-export").onclick = exportSave;
+  document.getElementById("a-import").onclick = importSave;
+  document.getElementById("a-rename").onclick = rename;
+  document.getElementById("a-reset").onclick = reset;
+  document.getElementById("a-aiMode").onclick = aiModeCycle;
+  document.getElementById("a-aiTest").onclick = aiTest;
+
+  document.getElementById("story").addEventListener("click", function(e){
+    var el = e.target.closest ? e.target.closest("[data-open]") : null;
+    if(!el) return;
+    var id = el.getAttribute("data-open");
+    if(id && s.threads[id]){
+      openThread = id; s.threads[id].unread = 0;
+      go("dm"); render();
+    }
+  });
+  document.getElementById("dmList").addEventListener("click", function(e){
+    var el = e.target.closest ? e.target.closest("[data-thread]") : null;
+    if(!el) return;
+    var id = el.getAttribute("data-thread");
+    if(s.threads[id]){ openThread = id; s.threads[id].unread = 0; render(); }
+  });
+  document.getElementById("tgts").addEventListener("click", function(e){
+    var t = e.target;
+    if(!t || t.tagName !== "BUTTON") return;
+    var a = t.getAttribute("data-probe"), b = t.getAttribute("data-bind"), c = t.getAttribute("data-dream");
+    if(a) doProbe(a);
+    if(b) doBind(b);
+    if(c) doDream(c);
+  });
+  document.getElementById("bag").addEventListener("click", function(e){
+    var t = e.target;
+    if(!t || t.tagName !== "BUTTON") return;
+    var u = t.getAttribute("data-use");
+    if(u) useItem(u);
+  });
+  document.getElementById("modal").addEventListener("click", function(e){ if(e.target === this) closeModal(); });
+  document.addEventListener("visibilitychange", function(){ if(document.hidden) save(); });
+  addEventListener("beforeunload", save);
+}
+
+stars();
+bind();
+var existing = load();
+if(existing){
+  s = existing;
+  if(!s.story.length) startStory(false);
+  render(); go("story");
+} else {
+  s = newState("星晚");
+  intro();
+}
+setInterval(function(){ if(s) save(); }, 20000);
+
+})();
+</script>
+</body>
+</html>
