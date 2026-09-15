@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -469,6 +469,10 @@
                 <span class="icon">👥</span>
                 <span>我的人</span>
             </div>
+            <div class="app-icon" onclick="openApp('play')">
+                <span class="icon">🎭</span>
+                <span>剧场</span>
+            </div>
         </div>
 
         <!-- 💬 App 1：聊天 -->
@@ -694,6 +698,35 @@
                 <input type="text" id="personRelation" placeholder="关系（室友 / 朋友 / 同学 / 家人…）" autocomplete="off" style="flex:1; min-width:0; padding:6px 12px; font-size:12px; border-radius:12px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none; font-family:inherit;">
             </div>
         </div>
+
+        <!-- 🎭 App 8：剧场（角色扮演） -->
+        <div class="app-view" id="view-play">
+            <div class="app-header">
+                <button class="back-btn" id="playBackBtn" onclick="playBack()">←</button>
+                <h2 id="playHeaderTitle">剧场</h2>
+                <button type="button" id="playNewBtn" onclick="toggleNewPlayForm()" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">➕ 新剧本</button>
+                <button type="button" id="playSumBtn" onclick="summarizeCurrentPlay()" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color); display:none;">📌 记进主线</button>
+            </div>
+
+            <div id="playNewForm" style="display:none; flex-direction:column; gap:6px; padding:6px 2px;">
+                <input type="text" id="npTitle" placeholder="剧本名（比如：雨夜书店）" style="padding:7px 12px; font-size:12.5px; border-radius:12px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none; font-family:inherit;">
+                <input type="text" id="npMe" placeholder="我演的角色（比如：来避雨的旅人）" style="padding:7px 12px; font-size:12.5px; border-radius:12px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none; font-family:inherit;">
+                <input type="text" id="npAi" placeholder="小千演的角色（比如：书店老板）" style="padding:7px 12px; font-size:12.5px; border-radius:12px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none; font-family:inherit;">
+                <textarea id="npWorld" placeholder="世界观与设定（时代、地点、两人的关系、性格、禁忌…随便写）" style="min-height:70px; padding:8px 12px; font-size:12.5px; line-height:1.6; border-radius:12px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none; font-family:inherit; resize:vertical;"></textarea>
+                <textarea id="npOpening" placeholder="开场白（可选：你想怎么开第一幕）" style="min-height:50px; padding:8px 12px; font-size:12.5px; line-height:1.6; border-radius:12px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none; font-family:inherit; resize:vertical;"></textarea>
+                <div class="todo-edit-actions">
+                    <button type="button" class="cancel" onclick="toggleNewPlayForm()">取消</button>
+                    <button type="button" class="save" onclick="createPlay()">开始这个故事</button>
+                </div>
+            </div>
+
+            <div class="archive-content" id="playList"></div>
+            <div class="handbook-list" id="playMessages" style="display:none; flex:1; overflow-y:auto; padding-bottom:8px;"></div>
+            <form id="playForm" onsubmit="event.preventDefault(); sendPlayMessage(); return false;" class="chat-input-area" style="display:none;">
+                <input type="text" id="playInput" placeholder="（以你的角色说话…）" autocomplete="off">
+                <button type="submit" class="send-btn">发送</button>
+            </form>
+        </div>
     </div>
 
     <script>
@@ -817,6 +850,7 @@
             if (appId === 'diary') renderDiaryUI();
             if (appId === 'people') renderPeopleUI();
             if (appId === 'books') loadDocs();
+            if (appId === 'play') { resetPlayView(); loadPlays(); }
             if (appId === 'memory') renderMemoryUI();
         }
 
@@ -2761,6 +2795,232 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             } catch (e) { console.warn("日程提醒生成失败:", e); }
             if (!text) text = `「${item.content}」到时间啦，别忘了。`;
             deliverAssistantMessage(text, true);
+        }
+
+        // ================= 【🎭 剧场（角色扮演）】 =================
+        let playList = [];
+        let currentPlay = null;
+
+        function toggleNewPlayForm() {
+            const f = document.getElementById('playNewForm');
+            if (!f) return;
+            f.style.display = (f.style.display === 'none' || !f.style.display) ? 'flex' : 'none';
+        }
+
+        function resetPlayView() {
+            currentPlay = null;
+            const t = document.getElementById('playHeaderTitle'); if (t) t.textContent = '剧场';
+            const m = document.getElementById('playMessages'); if (m) { m.style.display = 'none'; m.innerHTML = ''; }
+            const fm = document.getElementById('playForm'); if (fm) fm.style.display = 'none';
+            const nb = document.getElementById('playNewBtn'); if (nb) nb.style.display = '';
+            const sb = document.getElementById('playSumBtn'); if (sb) sb.style.display = 'none';
+            const l = document.getElementById('playList'); if (l) l.style.display = '';
+            const nf = document.getElementById('playNewForm'); if (nf) nf.style.display = 'none';
+        }
+
+        function playBack() {
+            if (currentPlay) { resetPlayView(); loadPlays(); }
+            else goHome();
+        }
+
+        async function loadPlays() {
+            if (!dbConnected || !db) return;
+            try {
+                const { data } = await db.from('cozy_plays').select('*').order('created_at', { ascending: false }).limit(100);
+                playList = data || [];
+                renderPlayList();
+            } catch (e) { console.warn('加载剧本失败（cozy_plays 表可能还没建）:', e.message); }
+        }
+
+        function renderPlayList() {
+            const c = document.getElementById('playList');
+            if (!c) return;
+            if (!playList || !playList.length) {
+                c.innerHTML = "<div style='font-size:12px;opacity:0.45;text-align:center;padding:18px 0;line-height:1.9;'>还没有剧本。<br>点右上角「➕ 新剧本」，把设定告诉我，我们就开演。</div>";
+                return;
+            }
+            c.innerHTML = '';
+            playList.forEach((p, i) => {
+                const div = document.createElement('div');
+                div.className = 'memory-item';
+                div.innerHTML = `<div style="display:flex;gap:8px;align-items:flex-start;">
+                        <div style="flex:1;min-width:0;">
+                            <div><strong style="font-size:13.5px;">🎬 ${escapeMomentHtml(p.title || '未命名')}</strong></div>
+                            <div style="font-size:11.5px;opacity:0.6;margin-top:3px;">我：${escapeMomentHtml(p.my_role || '—')} ｜ 小千：${escapeMomentHtml(p.ai_role || '—')}</div>
+                            ${p.world ? `<div style="font-size:12px;opacity:0.7;margin-top:4px;line-height:1.6;">${escapeMomentHtml(String(p.world).slice(0, 80))}</div>` : ''}
+                        </div>
+                        <div class="todo-actions">
+                            <button class="edit-btn" title="进入" onclick="enterPlay(${i})">▶</button>
+                            <button class="delete-btn" onclick="deletePlay(${i})">×</button>
+                        </div>
+                    </div>`;
+                c.appendChild(div);
+            });
+        }
+
+        async function createPlay() {
+            const g = (id) => { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
+            const title = g('npTitle'), myRole = g('npMe'), aiRole = g('npAi'), world = g('npWorld'), opening = g('npOpening');
+            if (!title || !aiRole) { alert('至少要有：剧本名 + 小千演的角色'); return; }
+            if (!dbConnected || !db) { alert('还没连上云端'); return; }
+            try {
+                const { data } = await db.from('cozy_plays').insert([{ title: title, my_role: myRole, ai_role: aiRole, world: world, opening: opening }]).select();
+                if (data && data[0]) {
+                    playList.unshift(data[0]);
+                    ['npTitle', 'npMe', 'npAi', 'npWorld', 'npOpening'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+                    toggleNewPlayForm();
+                    renderPlayList();
+                    enterPlay(0);
+                }
+            } catch (e) { alert('创建失败：' + e.message); }
+        }
+
+        async function deletePlay(i) {
+            const p = playList[i];
+            if (!p) return;
+            if (!confirm('删掉《' + p.title + '》和里面的全部剧情？')) return;
+            try {
+                await db.from('cozy_roleplay').delete().eq('play_id', p.id);
+                await db.from('cozy_plays').delete().eq('id', p.id);
+                playList.splice(i, 1);
+                renderPlayList();
+            } catch (e) { alert('删除失败：' + e.message); }
+        }
+
+        function playSystemPrompt(p) {
+            return `你们在演一出**虚构的故事**，不是日常聊天。
+【剧本】《${p.title || '未命名'}》
+【你演的角色】${p.ai_role || '（未设定）'}
+【对方演的角色】${p.my_role || '（未设定）'}
+【世界观与设定】${p.world || '（未设定，你们自己铺）'}
+【写作规则】
+- 你就是你演的那个角色，用第一人称沉浸地演下去。不要跳出角色，不要说「我是AI」「我没有实体」，不要解释这是虚构的。
+- 可以写角色的动作、神态、环境、心理与对话（中文，叙述和对话自然交织）。
+- 承接上文继续写，不要复述、不要总结、不要问「接下来呢」。
+- 每次 80~200 字，节奏别赶，把画面和情绪写出来。
+- 这是两个人私下写的虚构故事，允许强烈的情感张力与戏剧冲突。`;
+        }
+
+        async function enterPlay(i) {
+            const p = playList[i];
+            if (!p) return;
+            currentPlay = p;
+            const t = document.getElementById('playHeaderTitle');
+            if (t) t.textContent = '🎬 ' + (p.title || '未命名');
+            document.getElementById('playList').style.display = 'none';
+            document.getElementById('playNewForm').style.display = 'none';
+            document.getElementById('playNewBtn').style.display = 'none';
+            document.getElementById('playMessages').style.display = 'flex';
+            document.getElementById('playForm').style.display = 'flex';
+            const sb = document.getElementById('playSumBtn');
+            if (sb) sb.style.display = '';
+
+            const box = document.getElementById('playMessages');
+            box.innerHTML = "<div style='font-size:11.5px;opacity:0.5;text-align:center;padding:8px 0;'>加载剧情…</div>";
+            let lines = [];
+            try {
+                const { data } = await db.from('cozy_roleplay').select('role,content').eq('play_id', p.id).order('created_at', { ascending: true }).limit(500);
+                lines = data || [];
+            } catch (e) { console.warn(e.message); }
+            box.innerHTML = '';
+            if (lines.length) {
+                lines.forEach(l => appendPlayBubble(l.role, l.content));
+                box.scrollTop = box.scrollHeight;
+            } else {
+                box.innerHTML = `<div style="font-size:12px;opacity:0.6;line-height:1.95;padding:4px 2px;">
+                    <b>你：</b>${escapeMomentHtml(p.my_role || '')}<br><b>小千：</b>${escapeMomentHtml(p.ai_role || '')}<br>
+                    场景就位，写下你的第一句，故事就开始了。</div>`;
+                if (p.opening) await sendPlayMessage(p.opening);
+            }
+        }
+
+        function appendPlayBubble(role, text) {
+            const box = document.getElementById('playMessages');
+            if (!box) return;
+            const isMe = role === 'user';
+            const name = isMe ? ((currentPlay && currentPlay.my_role) || '我') : ((currentPlay && currentPlay.ai_role) || '小千');
+            const wrap = document.createElement('div');
+            wrap.style.cssText = `display:flex; gap:6px; align-items:flex-end; justify-content:${isMe ? 'flex-end' : 'flex-start'}; margin-bottom:9px;`;
+            const b = document.createElement('div');
+            b.style.cssText = `max-width:80%; padding:8px 12px; border-radius:14px; font-size:13px; line-height:1.85; white-space:pre-wrap; word-break:break-word; background-color:${isMe ? 'rgba(143,158,139,0.22)' : 'rgba(143,158,139,0.08)'};`;
+            b.textContent = String(text || '');
+            const tag = document.createElement('div');
+            tag.style.cssText = 'font-size:10px;opacity:0.45;white-space:nowrap;';
+            tag.textContent = name;
+            if (isMe) { wrap.appendChild(tag); wrap.appendChild(b); }
+            else { wrap.appendChild(b); wrap.appendChild(tag); }
+            box.appendChild(wrap);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        async function sendPlayMessage(presetText) {
+            if (!currentPlay) return;
+            const input = document.getElementById('playInput');
+            const text = (presetText != null ? String(presetText) : (input && input.value || '')).trim();
+            if (!text) return;
+            if (input) input.value = '';
+            appendPlayBubble('user', text);
+            try { await db.from('cozy_roleplay').insert([{ play_id: currentPlay.id, role: 'user', content: text }]); } catch (e) {}
+
+            const box = document.getElementById('playMessages');
+            const typing = document.createElement('div');
+            typing.style.cssText = 'font-size:11.5px;opacity:0.5;padding:2px 6px 10px;';
+            typing.textContent = '（' + ((currentPlay.ai_role) || '小千') + ' 正在回应…）';
+            box.appendChild(typing); box.scrollTop = box.scrollHeight;
+
+            try {
+                let hist = [];
+                try {
+                    const { data } = await db.from('cozy_roleplay').select('role,content').eq('play_id', currentPlay.id).order('created_at', { ascending: true }).limit(500);
+                    hist = data || [];
+                } catch (e) {}
+                const msgs = [{ role: 'system', content: playSystemPrompt(currentPlay) }]
+                    .concat(hist.slice(-40).map(h => ({ role: h.role, content: sanitizeForApi(h.content) })));
+                const reply = cleanAssistantReply(await callModelText(msgs));
+                typing.remove();
+                if (!reply) throw new Error('空回复');
+                appendPlayBubble('assistant', reply);
+                try { await db.from('cozy_roleplay').insert([{ play_id: currentPlay.id, role: 'assistant', content: reply }]); } catch (e) {}
+            } catch (e) {
+                typing.remove();
+                appendPlayBubble('assistant', '（' + ((currentPlay.ai_role) || '小千') + ' 卡了一下：' + e.message + '）');
+            }
+        }
+
+        // 📌 把这场戏记进主线记忆，主聊天里的小千也会知道
+        async function summarizeCurrentPlay() {
+            if (!currentPlay) return;
+            const p = currentPlay;
+            try {
+                const { data } = await db.from('cozy_roleplay').select('role,content').eq('play_id', p.id).order('created_at', { ascending: true }).limit(500);
+                const hist = data || [];
+                if (hist.length < 2) { alert('剧情还太短，先演几句～'); return; }
+                const text = hist.map(h => `${h.role === 'user' ? (p.my_role || '我') : (p.ai_role || '小千')}：${sanitizeForApi(h.content)}`).join('\n').slice(-6000);
+                const prompt = `下面是线条和小千在演的一出虚构故事《${p.title}》的片段。请写一段**第三人称的剧情摘记**，让主聊天里的小千知道"我们演过什么"。
+要求（只用简体中文，不要英文和思考过程）：
+- 120~220 字
+- 写清：她演谁、我演谁、世界观、剧情进展到哪里、两人之间的关键互动或约定
+- 不要复述台词，不要评价
+只输出摘记正文。
+
+剧本片段：
+======================
+${text}
+======================`;
+                const summary = cleanAssistantReply(await callModelText([{ role: 'user', content: prompt }]));
+                if (!summary) throw new Error('生成失败');
+                const today = getCozySessionId();
+                const memory = `【剧场·${p.title}】${summary}`;
+                const obj = { date: today, folder: `剧场·${p.title}`, memory: memory, emotion: '', state: '入戏' };
+                memoryDb.unshift(obj);
+                try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
+                renderMemoryUI();
+                if (dbConnected && db) {
+                    try { await db.from('cozy_memories').insert([{ memory_date: today, folder: obj.folder, memory: memory, emotion: '', state: '入戏' }]); } catch (e) {}
+                }
+                setTimeout(function () { try { indexMemoryItemsToVectors([obj]); } catch (e) {} }, 800);
+                alert('已记进主线记忆 —— 主聊天里的小千现在知道这场戏了。');
+            } catch (e) { alert('记进主线失败：' + e.message); }
         }
 
         // ================= 【📥 教材 / 资料导入】 =================
