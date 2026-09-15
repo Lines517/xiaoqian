@@ -640,7 +640,7 @@
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>庇护所记忆</h2>
                 <button type="button" onclick="organizeAllMemories()" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🪄 整理重复</button>
-                <button type="button" onclick="rebuildMemoryVectors(false)" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🧬 建语义索引</button>
+                <button type="button" onclick="rebuildAllVectors(false)" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🧬 建语义索引</button>
                 <button type="button" onclick="extractAllFacts()" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🧩 整理事实</button>
             </div>
             <div class="archive-content" id="archiveContent"></div>
@@ -1847,7 +1847,7 @@ ${historyText}
                 const good = (hits || []).filter(h => h && h.text && Number(h.similarity) > 0.32);
                 if (good.length > 0) {
                     const lines = good.map(h => `- [${h.mem_date || ''}] ${String(h.text).slice(0, 140)}`).join('\n');
-                    vecPrompt = `\n【语义唤起的旧记忆（按相关度从你们全部记忆里挑出来的，可自然引用，别生硬复述）】：\n${lines}`;
+                    vecPrompt = `\n【语义唤起的旧内容（可能是以前某天的记忆或你们的原话，按相关度从全部历史里挑出来的）】：\n${lines}`;
                 }
             } catch (e) {}
 
@@ -1995,6 +1995,8 @@ Always keep an extremely gentle, mature and equal tone.
                 const aiMsg = { session_id: currentSessionId, role: "assistant", content: finalReply, time: getNowTimeStr() };
                 allChatMessages.push(aiMsg);
                 saveChats();
+                // 🧬 后台悄悄把刚才这几句也向量化（不阻塞回复）
+                setTimeout(function () { try { indexChatsToVectors(4); } catch (e) {} }, 1500);
 
                 // 对新生成的代码块进行渲染和高亮
                 aiBubbleTextEl.querySelectorAll('pre').forEach(pre => {
@@ -2338,6 +2340,48 @@ Always keep an extremely gentle, mature and equal tone.
                 try { await db.from('cozy_mem_vec').upsert(rows, { onConflict: 'source_key' }); done += rows.length; } catch (e) { console.warn('写入向量失败:', e.message); }
             }
             if (!silent) alert(`语义索引完成：${done} 条`);
+            return done;
+        }
+
+        // 一键：记忆 + 聊天记录，全都做成语义索引
+        async function rebuildAllVectors(silent) {
+            if (!dbConnected || !db) { if (!silent) alert('还没连上云端'); return; }
+            if (!silent && !confirm('把「全部记忆 + 最近的聊天记录」都做成语义索引？\n（会调几次 embedding，一共几分钱）')) return;
+            const a = await rebuildMemoryVectors(true);
+            const b = await indexChatsToVectors(1500);
+            if (!silent) alert(`语义索引完成：记忆 ${a} 条、聊天 ${b} 条`);
+        }
+
+        function simpleHash(s) {
+            let h = 0;
+            const t = String(s || '');
+            for (let i = 0; i < t.length; i++) { h = ((h << 5) - h + t.charCodeAt(i)) | 0; }
+            return Math.abs(h).toString(36);
+        }
+
+        // 把「聊天记录本身」也做成语义索引——很久以前说过、但没进记忆的细节也能被想起来
+        async function indexChatsToVectors(maxMsgs) {
+            if (!dbConnected || !db) return 0;
+            let msgs = (allChatMessages || []).filter(m => m && m.content && String(m.content).trim().length > 2);
+            if (!msgs.length) return 0;
+            msgs = msgs.slice(-(maxMsgs || 1500));
+            let done = 0;
+            const BATCH = 24;
+            for (let i = 0; i < msgs.length; i += BATCH) {
+                const slice = msgs.slice(i, i + BATCH);
+                const texts = slice.map(m => ((m.role === 'user' ? '线条' : '小千') + '：' + sanitizeForApi(m.content)).slice(0, 400));
+                let vecs = null;
+                try { vecs = await embedTexts(texts); } catch (e) { continue; }
+                if (!vecs) continue;
+                const rows = slice.map((m, k) => ({
+                    source_key: 'chat:' + (m.session_id || '') + ':' + m.role + ':' + simpleHash(m.content),
+                    text: texts[k],
+                    folder: '聊天记录',
+                    mem_date: m.session_id || '',
+                    embedding: vecs[k]
+                })).filter(r => r.embedding);
+                try { await db.from('cozy_mem_vec').upsert(rows, { onConflict: 'source_key' }); done += rows.length; } catch (e) { console.warn('聊天向量写入失败:', e.message); }
+            }
             return done;
         }
 
