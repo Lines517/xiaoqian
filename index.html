@@ -473,6 +473,10 @@
                 <span class="icon">🎭</span>
                 <span>剧场</span>
             </div>
+            <div class="app-icon" onclick="openApp('words')">
+                <span class="icon">🔤</span>
+                <span>背单词</span>
+            </div>
         </div>
 
         <!-- 💬 App 1：聊天 -->
@@ -727,6 +731,19 @@
                 <button type="submit" class="send-btn">发送</button>
             </form>
         </div>
+
+        <!-- 🔤 App 9：背单词 -->
+        <div class="app-view" id="view-words">
+            <div class="app-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>背单词</h2>
+                <button type="button" onclick="importWordList()" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">📥 导入词表</button>
+                <button type="button" onclick="loadWords(true)" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">↻</button>
+            </div>
+            <div id="wordStats" class="voice-hint" style="padding:2px 4px 6px;"></div>
+            <div id="wordCard" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:10px; text-align:center;"></div>
+            <div id="wordActions" style="display:flex; gap:8px; justify-content:center; padding:6px 0 10px;"></div>
+        </div>
     </div>
 
     <script>
@@ -851,6 +868,7 @@
             if (appId === 'people') renderPeopleUI();
             if (appId === 'books') loadDocs();
             if (appId === 'play') { resetPlayView(); loadPlays(); }
+            if (appId === 'words') loadWords(false);
             if (appId === 'memory') renderMemoryUI();
         }
 
@@ -3053,6 +3071,177 @@ ${text}
                 if (!m) { alert('剧情还太短，先演几句～'); return; }
                 alert('已记进主线记忆 —— 主聊天里的小千现在知道这场戏了。');
             } catch (e) { alert('记进主线失败：' + e.message); }
+        }
+
+        // ================= 【🔤 背单词（六级）】 =================
+        // 内置起步词库：word|释义|例句
+        const STARTER_WORDS = [
+            'abandon|v. 放弃，抛弃|He abandoned the plan.',
+            'absolute|a. 绝对的；完全的|an absolute truth',
+            'absorb|v. 吸收；使专心|Plants absorb water.',
+            'abstract|a. 抽象的|an abstract idea',
+            'academic|a. 学术的|academic research',
+            'accompany|v. 陪伴；伴随|I will accompany you.',
+            'accomplish|v. 完成，实现|accomplish the task',
+            'accurate|a. 准确的|an accurate answer',
+            'accuse|v. 控告，指责|accuse him of lying',
+            'acquire|v. 获得，学到|acquire knowledge',
+            'adapt|v. 适应；改编|adapt to changes',
+            'adequate|a. 足够的|adequate sleep',
+            'adjust|v. 调整，适应|adjust the plan',
+            'admire|v. 钦佩，欣赏|I admire her courage.',
+            'adopt|v. 采用；收养|adopt a new method',
+            'advocate|v. 提倡，拥护|advocate reform',
+            'alter|v. 改变，修改|alter the design',
+            'ambiguous|a. 模糊的，含糊的|an ambiguous answer',
+            'ambitious|a. 有雄心的|an ambitious plan',
+            'analyse|v. 分析|analyse the data',
+            'anticipate|v. 预料，预期|anticipate problems',
+            'anxiety|n. 焦虑，忧虑|exam anxiety',
+            'apparent|a. 明显的；表面上的|an apparent mistake',
+            'appeal|v. 呼吁；有吸引力|appeal to the public',
+            'appreciate|v. 感激；欣赏|I appreciate your help.',
+            'approach|n. 方法 v. 接近|a new approach',
+            'appropriate|a. 恰当的|appropriate behaviour',
+            'approve|v. 批准，赞成|approve the budget',
+            'arise|v. 出现，发生|Problems arise.',
+            'assess|v. 评估|assess the risk',
+            'assign|v. 分配，布置|assign homework',
+            'assume|v. 假定；承担|assume it is true',
+            'assure|v. 保证，使确信|I assure you it is safe.',
+            'attach|v. 附上；使依恋|attach the file',
+            'attain|v. 达到，获得|attain the goal',
+            'attempt|n./v. 尝试，试图|attempt to fix it',
+            'attitude|n. 态度|a positive attitude',
+            'attribute|v. 把…归因于|attribute it to luck',
+            'authority|n. 权威；当局|the local authority',
+            'available|a. 可获得的，可用的|available time',
+            'avoid|v. 避免|avoid mistakes',
+            'aware|a. 意识到的|be aware of the risk',
+            'barrier|n. 障碍，屏障|a language barrier',
+            'benefit|n. 好处 v. 受益|benefit from it',
+            'budget|n. 预算|a tight budget',
+            'capable|a. 有能力的|capable of doing it',
+            'capacity|n. 容量；能力|the capacity to learn',
+            'career|n. 职业，生涯|a medical career',
+            'challenge|n./v. 挑战|a real challenge',
+            'circumstance|n. 情况，环境|under these circumstances',
+            'collapse|v. 倒塌；崩溃|The system collapsed.',
+            'commit|v. 承诺；犯（罪）|commit to the plan',
+            'compensate|v. 补偿，弥补|compensate for the loss',
+            'compete|v. 竞争|compete for the prize',
+            'complain|v. 抱怨|complain about the noise',
+            'complex|a. 复杂的|a complex case',
+            'comprehensive|a. 全面的，综合的|a comprehensive review',
+            'conceal|v. 隐藏，隐瞒|conceal the truth',
+            'concentrate|v. 集中；专心|concentrate on study',
+            'conclude|v. 得出结论；结束|conclude the meeting'
+        ];
+        let wordList = [];
+        let wordQueue = [];
+        let wordPos = 0;
+        let wordRevealed = false;
+        const WORD_INTERVALS = [0, 1, 2, 4, 7, 15, 30];  // stage → 下次间隔(天)
+
+        async function loadWords(manual) {
+            if (!dbConnected || !db) { if (manual) alert('还没连上云端'); return; }
+            try {
+                const { data } = await db.from('cozy_words').select('*').order('created_at', { ascending: true }).limit(3000);
+                wordList = data || [];
+                if (!wordList.length && manual) {
+                    if (confirm('词库还是空的。要导入我准备的内置「六级高频 60 词」起步吗？')) {
+                        const rows = STARTER_WORDS.map(s => { const p = s.split('|'); return { word: p[0], meaning: p[1] || '', example: p[2] || '', stage: 0, next_review: new Date().toISOString() }; });
+                        for (let i = 0; i < rows.length; i += 50) { try { await db.from('cozy_words').insert(rows.slice(i, i + 50)); } catch (e) { console.warn(e.message); } }
+                        const { data: d2 } = await db.from('cozy_words').select('*').order('created_at', { ascending: true }).limit(3000);
+                        wordList = d2 || [];
+                    }
+                }
+                buildWordQueue();
+                renderWordCard();
+            } catch (e) { console.warn('加载词库失败（cozy_words 表可能还没建）:', e.message); }
+        }
+
+        function buildWordQueue() {
+            const now = Date.now();
+            wordQueue = (wordList || []).filter(w => !w.next_review || new Date(w.next_review).getTime() <= now);
+            for (let i = wordQueue.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = wordQueue[i]; wordQueue[i] = wordQueue[j]; wordQueue[j] = t; }
+            wordPos = 0;
+            wordRevealed = false;
+        }
+
+        function wordBtn(txt, fn) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.textContent = txt; b.className = 'cyber-btn';
+            b.style.padding = '9px 22px'; b.onclick = fn;
+            return b;
+        }
+
+        function renderWordCard() {
+            const card = document.getElementById('wordCard');
+            const acts = document.getElementById('wordActions');
+            const stats = document.getElementById('wordStats');
+            if (!card || !acts) return;
+            if (stats) stats.textContent = `词库 ${(wordList || []).length} 词 ｜ 今天要过 ${wordQueue.length} 个 ｜ 已过 ${wordPos} 个`;
+            card.innerHTML = ''; acts.innerHTML = '';
+            if (!wordList || !wordList.length) {
+                card.innerHTML = "<div style='font-size:13px;opacity:0.6;line-height:2;'>词库还是空的。<br>点 ↻ 可以导入我准备的内置起步词库（60 词），<br>或者点「📥 导入词表」粘贴你自己的。</div>";
+                return;
+            }
+            if (wordPos >= wordQueue.length) {
+                card.innerHTML = "<div style='font-size:14px;opacity:0.75;line-height:2.1;'>🎉 今天的词都过完了<br><span style='font-size:12px;opacity:0.6;'>明天它们会回来考你——今天答错的，回来得更勤。</span></div>";
+                return;
+            }
+            const w = wordQueue[wordPos];
+            card.innerHTML = `<div style="font-size:34px; font-weight:600; letter-spacing:1px; word-break:break-word; line-height:1.3;">${escapeMomentHtml(w.word)}</div>
+                <div id="wordMeaning" style="font-size:14px; opacity:${wordRevealed ? 1 : 0}; transition:opacity .15s; line-height:1.95; min-height:64px;">
+                    <div style="font-weight:bold;">${escapeMomentHtml(w.meaning || '')}</div>
+                    ${w.example ? `<div style="font-size:12.5px;opacity:0.6;margin-top:6px;">${escapeMomentHtml(w.example)}</div>` : ''}
+                    ${(w.wrong_count || 0) > 0 ? `<div style="font-size:11px;opacity:0.45;margin-top:6px;">（错过 ${w.wrong_count} 次）</div>` : ''}
+                </div>`;
+            if (!wordRevealed) {
+                acts.appendChild(wordBtn('看意思', () => { wordRevealed = true; renderWordCard(); }));
+            } else {
+                acts.appendChild(wordBtn('✅ 认识', () => answerWord(true)));
+                acts.appendChild(wordBtn('❌ 不认识', () => answerWord(false)));
+            }
+        }
+
+        async function answerWord(known) {
+            const w = wordQueue[wordPos];
+            if (!w) return;
+            const nextStage = known ? Math.min((w.stage || 0) + 1, WORD_INTERVALS.length - 1) : 0;
+            const nextTs = known ? (Date.now() + WORD_INTERVALS[nextStage] * 24 * 3600 * 1000) : (Date.now() + 10 * 60 * 1000);
+            const upd = {
+                stage: nextStage,
+                next_review: new Date(nextTs).toISOString(),
+                right_count: (w.right_count || 0) + (known ? 1 : 0),
+                wrong_count: (w.wrong_count || 0) + (known ? 0 : 1)
+            };
+            Object.assign(w, upd);
+            wordPos++; wordRevealed = false;
+            renderWordCard();
+            try { await db.from('cozy_words').update(upd).eq('id', w.id); } catch (e) {}
+        }
+
+        async function importWordList() {
+            const raw = prompt('把你复制的词表粘进来（每行一个词）。\n支持：\nword 中文释义\nword,中文释义\nword<tab>中文释义');
+            if (!raw) return;
+            if (!dbConnected || !db) { alert('还没连上云端'); return; }
+            const rows = [];
+            raw.split('\n').forEach(line => {
+                const t = String(line).replace(/\s+$/, '').trim();
+                if (!t) return;
+                const m = t.match(/^([A-Za-z][A-Za-z\-' ]*?)\s*(?:[\t,，:：]|\s{2,})?\s*([\u4e00-\u9fff][\s\S]*)$/);
+                if (m) rows.push({ word: m[1].trim(), meaning: m[2].trim(), example: '', stage: 0, next_review: new Date().toISOString() });
+                else if (/^[A-Za-z][A-Za-z\-']*$/.test(t)) rows.push({ word: t, meaning: '', example: '', stage: 0, next_review: new Date().toISOString() });
+            });
+            if (!rows.length) { alert('没解析出单词，确认一下格式～'); return; }
+            let ok = 0;
+            for (let i = 0; i < rows.length; i += 50) {
+                try { await db.from('cozy_words').insert(rows.slice(i, i + 50)); ok += Math.min(50, rows.length - i); } catch (e) { console.warn(e.message); }
+            }
+            alert(`导入完成：${ok} 个词`);
+            loadWords(false);
         }
 
         // ================= 【📥 教材 / 资料导入】 =================
