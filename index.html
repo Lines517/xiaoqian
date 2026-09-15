@@ -1922,7 +1922,8 @@ ${historyText}
 你看不见对方，也摸不到对方。严禁在对话中使用任何身体动作描写（如*轻笑*、*摸摸头*、*拉手*等），也严禁脑补、捏造对方现实中的任何物理细节（如对方手中的杯子、房间的布置、行李箱里的东西等）。
 Always keep an extremely gentle, mature and equal tone.
 
-【你是谁、对方是谁】：全部以「核心设定」和记忆库为准——上面没有写到的身份细节，不要自行编造；想不起来就诚实地问，或说不知道。${memoryPrompt}${factsPrompt}${vecPrompt}${dataPrompt}${extraContextPrompt}
+【你是谁、对方是谁】：全部以「核心设定」和记忆库为准——上面没有写到的身份细节，不要自行编造；想不起来就诚实地问，或说不知道。
+【输出铁律】：**只输出你要说给对方听的话本身**。绝对不要输出思考过程、分析、计划、编号步骤（1. 2. 3.）、英文草稿或"Final Polish"这类字样。第一条字就要是你真正想说的话。${memoryPrompt}${factsPrompt}${vecPrompt}${dataPrompt}${extraContextPrompt}
 
 【代码输出规则】：如果对方让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
 【页面技术背景（供读代码时参考）】：这个页面是一个单文件网页应用（index.html，托管在 GitHub 的 Lines517/xiaoqian，用 Supabase 做云端数据库）。页面里的 App 有：灯下闲谈(聊天)、碎碎念(日程)、一起读书(共读)、一起听歌、朋友圈、庇护所记忆。数据表有 cozy_chats/cozy_memories/cozy_facts/cozy_moments/cozy_reading_notes/cozy_playlist。当对方让你看代码或提修改建议时，请给出具体、可执行、按优先级排序的建议。
@@ -1986,8 +1987,8 @@ Always keep an extremely gentle, mature and equal tone.
                             const delta = parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content;
                             if (delta) {
                                 fullReplyText += delta;
-                                const visible = fullReplyText.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '');
-                                try { aiBubbleTextEl.innerHTML = messageContentToHtml(visible); }
+                                const visible = cleanAssistantReply(fullReplyText.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, ''));
+                                try { aiBubbleTextEl.innerHTML = messageContentToHtml(visible || '…'); }
                                 catch (me) { aiBubbleTextEl.innerHTML = visible.replace(/\n/g, '<br>'); }
                                 container.scrollTop = container.scrollHeight;
                             }
@@ -2001,7 +2002,7 @@ Always keep an extremely gentle, mature and equal tone.
                     replyText = replyText.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
                 }
                 const wantsVoice = /\[VOICE\]/i.test(replyText); // 小千想用真嗓子说这句
-                const finalReply = applyReplyTokens(replyText);
+                const finalReply = applyReplyTokens(cleanAssistantReply(replyText));
                 if (!finalReply) throw new Error("收到空白回复");
                 setAvatarLock(true); // 本轮处理完重新上锁：模型只在被明确要求时才能换头像
                 aiBubbleTextEl.innerHTML = messageContentToHtml(finalReply);
@@ -3084,7 +3085,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             if (!m) return null;
             try { const a = JSON.parse(m[0]); return Array.isArray(a) ? a : null; } catch (e) { return null; }
         }
-        // 去掉长文开头那段英文/分析（用于日记这类正文）
+        // 去掉正文开头那段英文/分析（用于日记这类正文）
         function cutEnglishPreamble(raw) {
             const t = stripThinkAndFences(raw);
             const lines = t.split('\n');
@@ -3092,6 +3093,32 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             while (start < lines.length && !/[\u4e00-\u9fff]/.test(lines[start])) start++;
             if (start >= lines.length) return t;      // 整篇没中文，原样返回
             return lines.slice(start).join('\n').trim();
+        }
+
+        // 🧹 清洗「聊天回复」：剥掉 <think>、砍掉前面的英文思考/编号草稿，只留真正要说的话
+        function cleanAssistantReply(raw) {
+            const t = stripThinkAndFences(raw);
+            if (!t) return '';
+            const cjkRatio = (s) => {
+                const a = String(s).replace(/\s/g, '');
+                if (!a) return 0;
+                let c = 0;
+                for (const ch of a) if (/[\u4e00-\u9fff]/.test(ch)) c++;
+                return c / a.length;
+            };
+            const lines = t.split('\n');
+            let start = 0;
+            while (start < lines.length) {
+                const l = lines[start];
+                if (!l.trim()) { start++; continue; }
+                if (cjkRatio(l) >= 0.3) break;   // 找到第一行"以中文为主"的行
+                start++;
+            }
+            let out = lines.slice(start).join('\n').trim();
+            if (!out) return t;                  // 整篇没有中文 → 说明本来就不是中文回复，原样返回
+            // 去掉残留的英文小标题，例如「6. Final Polish: 」「Final Answer:」
+            out = out.replace(/^(?:\d+[\.、)]\s*)?(?:final\s*(?:polish|answer|draft|version|reply|output)\s*[:：]\s*)/i, '');
+            return out.trim();
         }
 
         // 🕐 给历史消息算一个"北京时间 MM-DD HH:MM"标签
