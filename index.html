@@ -1046,6 +1046,7 @@
                     await syncWithCloud();
                     await loadAvatarsFromCloud();
                     await loadMoments();
+                    await loadDiary();
                     await loadPlaylist();
                     await loadReadingNotes();
                     await loadFacts();
@@ -2898,10 +2899,9 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             try {
                 const { data } = await db.from('cozy_diary').select('*').order('diary_date', { ascending: false }).limit(200);
                 if (data && data.length) {
-                    const map = {};
-                    (diaryList || []).forEach(d => { map[d.date] = d; });
-                    data.forEach(r => { map[r.diary_date] = { date: r.diary_date, content: r.content || '', mood: r.mood || '' }; });
-                    diaryList = Object.values(map).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+                    // 🗄️ 云端为准：避免两台设备各显示各的（本地那版会被云端版替换）
+                    diaryList = data.map(r => ({ date: r.diary_date, content: r.content || '', mood: r.mood || '' }))
+                                    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
                     try { localStorage.setItem('cozy_diary_list', JSON.stringify(diaryList)); } catch (e) {}
                     renderDiaryUI();
                 }
