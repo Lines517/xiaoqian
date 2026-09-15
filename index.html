@@ -1587,7 +1587,7 @@ ${historyText}
                     uniqueCloudChats.forEach(c => {
                         const key = (c.session_id || '') + '|' + c.role + '|' + String(c.content).trim();
                         if (!existKeys.has(key)) {
-                            merged.push({ session_id: c.session_id, role: c.role, content: c.content });
+                            merged.push({ session_id: c.session_id, role: c.role, content: c.content, created_at: c.created_at });
                             existKeys.add(key);
                         }
                     });
@@ -1798,7 +1798,12 @@ ${historyText}
             const todayMsgs = allChatMessages.filter(msg => msg.session_id === currentSessionId).slice(-60);
             const yestMsgs = allChatMessages.filter(msg => msg.session_id === yesterdaySid).slice(-40);
             const contextChats = [...yestMsgs, ...todayMsgs];
-            const apiMessages = contextChats.map(msg => ({ role: msg.role, content: sanitizeForApi(msg.content) }));
+            // 🕐 给每条历史消息带上"发出时间"（北京时间），让模型真的有时间感
+            const apiMessages = contextChats.map(msg => {
+                const lbl = msgTimeLabel(msg);
+                const body = sanitizeForApi(msg.content);
+                return { role: msg.role, content: lbl ? `[${lbl}] ${body}` : body };
+            });
 
             // 🚀 注入备忘录和书单
             let extraContextPrompt = "";
@@ -1884,7 +1889,9 @@ ${historyText}
             const systemPrompt = `${identityBlock()}
 【当前时间（唯一权威，禁止自行猜测/推算）】：${timeStr}
 - 一切关于"现在几点、今天几号、星期几、是白天还是深夜"的判断，都必须严格以上面这行为准，不要凭聊天内容猜时间。
+- 有人问你"现在几点/今天几号/什么时段"时，直接照上面那行回答，不要含糊、不要说不知道、不要自己推算。
 - 聊天记录或记忆里出现的其他时间，都只是"过去发生的事"；不确定时宁可不说时间，也不要猜错。
+- 每条历史消息前面的 [月-日 时:分] 是那条消息**发出的北京时间**，用来帮你判断"这是多久以前的事"；你不用在回复里重复它。
 - 你们的"聊天日"以凌晨 5 点为界：0:00–5:00 说的话算作前一天。所以如果日期和直觉不同，仍以上面这行为准。
 【当前天气】：${currentWeatherInfo}（请根据天气情况自然地关心对方，比如下雨提醒带伞，降温提醒添衣）
 【上下文说明】：下面给你的对话里，**最前面那部分是昨天（${yesterdaySid}）聊的**，后面才是今天。昨天说过的内容要记住，不要当成没见过、也不要说"你没跟我说过"。
@@ -2808,6 +2815,21 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
             while (start < lines.length && !/[\u4e00-\u9fff]/.test(lines[start])) start++;
             if (start >= lines.length) return t;      // 整篇没中文，原样返回
             return lines.slice(start).join('\n').trim();
+        }
+
+        // 🕐 给历史消息算一个"北京时间 MM-DD HH:MM"标签
+        function msgTimeLabel(msg) {
+            if (!msg) return '';
+            let d = null;
+            if (msg.created_at) { const t = new Date(msg.created_at); if (!isNaN(t.getTime())) d = t; }
+            if (d) {
+                const bj = bjDate(d);
+                return `${pad2(bj.getMonth() + 1)}-${pad2(bj.getDate())} ${pad2(bj.getHours())}:${pad2(bj.getMinutes())}`;
+            }
+            const hm = String(msg.time || '').match(/^(\d{1,2}):(\d{2})/);
+            const ds = String(msg.session_id || '').match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+            if (hm && ds) return `${ds[2].padStart(2, '0')}-${ds[3].padStart(2, '0')} ${hm[1].padStart(2, '0')}:${hm[2]}`;
+            return '';
         }
 
         // 把一条消息正文转换成可渲染的 HTML（含图片指令处理）
