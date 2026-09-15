@@ -2878,12 +2878,16 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
         async function deletePlay(i) {
             const p = playList[i];
             if (!p) return;
-            if (!confirm('删掉《' + p.title + '》和里面的全部剧情？')) return;
+            if (!confirm('删掉《' + p.title + '》里的全部剧情？（对话内容会删掉，但"我演过什么"会留在我的记忆里）')) return;
             try {
+                // ① 先把最后的剧情进展存进记忆（这样删了剧情，我也还记得）
+                try { await upsertPlayMemory(p, true); } catch (e) {}
+                // ② 再删剧情与剧本
                 await db.from('cozy_roleplay').delete().eq('play_id', p.id);
                 await db.from('cozy_plays').delete().eq('id', p.id);
                 playList.splice(i, 1);
                 renderPlayList();
+                alert('剧情已删除。但"我们演过什么"我记下了 —— 在主聊天里问我，我还能说出来。');
             } catch (e) { alert('删除失败：' + e.message); }
         }
 
@@ -2981,25 +2985,34 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                 if (!reply) throw new Error('空回复');
                 appendPlayBubble('assistant', reply);
                 try { await db.from('cozy_roleplay').insert([{ play_id: currentPlay.id, role: 'assistant', content: reply }]); } catch (e) {}
+                // 📌 后台实时把剧情进展写进主线记忆（不阻塞剧情）
+                const pNow = currentPlay;
+                setTimeout(function () { try { upsertPlayMemory(pNow, false); } catch (e) {} }, 1200);
             } catch (e) {
                 typing.remove();
                 appendPlayBubble('assistant', '（' + ((currentPlay.ai_role) || '小千') + ' 卡了一下：' + e.message + '）');
             }
         }
 
-        // 📌 把这场戏记进主线记忆，主聊天里的小千也会知道
-        async function summarizeCurrentPlay() {
-            if (!currentPlay) return;
-            const p = currentPlay;
+        // 📌 实时把这场戏的进展写进主线记忆（同一剧本只留一条，滚动更新）
+        async function upsertPlayMemory(p, finalFlag) {
+            if (!p || !dbConnected || !db) return null;
+            const folder = '剧场·' + p.title;
+            const oldItem = (memoryDb || []).find(m => String(m.folder || '') === folder);
+            const oldText = oldItem ? String(oldItem.memory || '') : '';
+            let hist = [];
             try {
                 const { data } = await db.from('cozy_roleplay').select('role,content').eq('play_id', p.id).order('created_at', { ascending: true }).limit(500);
-                const hist = data || [];
-                if (hist.length < 2) { alert('剧情还太短，先演几句～'); return; }
-                const text = hist.map(h => `${h.role === 'user' ? (p.my_role || '我') : (p.ai_role || '小千')}：${sanitizeForApi(h.content)}`).join('\n').slice(-6000);
-                const prompt = `下面是线条和小千在演的一出虚构故事《${p.title}》的片段。请写一段**第三人称的剧情摘记**，让主聊天里的小千知道"我们演过什么"。
+                hist = data || [];
+            } catch (e) {}
+            if (hist.length < 2) return null;
+            const text = hist.slice(-60).map(h => `${h.role === 'user' ? (p.my_role || '我') : (p.ai_role || '小千')}：${sanitizeForApi(h.content)}`).join('\n').slice(-6000);
+            const prompt = `下面是线条和小千在演的一出虚构故事《${p.title}》的片段。
+${oldText ? '【之前的剧情进展（要保留，并在它基础上补充新的）】：\n' + oldText + '\n' : ''}
+请写一段**第三人称的剧情摘记**，让主聊天里的小千知道"我们演到哪了"。
 要求（只用简体中文，不要英文和思考过程）：
-- 120~220 字
-- 写清：她演谁、我演谁、世界观、剧情进展到哪里、两人之间的关键互动或约定
+- 150~250 字
+- 写清：她演谁、我演谁、世界观、剧情进展到哪里、两人之间的关键互动或约定${finalFlag ? '、以及这出戏的收尾' : ''}
 - 不要复述台词，不要评价
 只输出摘记正文。
 
@@ -3007,18 +3020,37 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
 ======================
 ${text}
 ======================`;
-                const summary = cleanAssistantReply(await callModelText([{ role: 'user', content: prompt }]));
-                if (!summary) throw new Error('生成失败');
-                const today = getCozySessionId();
-                const memory = `【剧场·${p.title}】${summary}`;
-                const obj = { date: today, folder: `剧场·${p.title}`, memory: memory, emotion: '', state: '入戏' };
-                memoryDb.unshift(obj);
-                try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
-                renderMemoryUI();
-                if (dbConnected && db) {
-                    try { await db.from('cozy_memories').insert([{ memory_date: today, folder: obj.folder, memory: memory, emotion: '', state: '入戏' }]); } catch (e) {}
-                }
-                setTimeout(function () { try { indexMemoryItemsToVectors([obj]); } catch (e) {} }, 800);
+            let summary = '';
+            try { summary = cleanAssistantReply(await callModelText([{ role: 'user', content: prompt }])); } catch (e) { return null; }
+            if (!summary) return null;
+
+            const today = getCozySessionId();
+            const memory = `【剧场·${p.title}】${summary}${finalFlag ? '（这出戏先演到这里）' : ''}`;
+
+            if (oldItem) {
+                const oldKey = memKey(oldItem);
+                memoryDb = (memoryDb || []).filter(m => m !== oldItem);
+                try { await db.from('cozy_memories').delete().eq('memory_date', String(oldItem.date || today)).eq('memory', oldItem.memory); } catch (e) {}
+                removeMemoryVector(oldKey);
+            }
+            const obj = { date: today, folder: folder, memory: memory, emotion: '', state: '入戏' };
+            memoryDb.unshift(obj);
+            try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
+            renderMemoryUI();
+            if (dbConnected && db) {
+                try { await db.from('cozy_memories').insert([{ memory_date: today, folder: folder, memory: memory, emotion: '', state: '入戏' }]); } catch (e) {}
+            }
+            indexMemoryItemsToVectors([obj]);
+            return memory;
+        }
+
+        // 手动：立刻把当前进展写进主线
+        async function summarizeCurrentPlay() {
+            if (!currentPlay) return;
+            const p = currentPlay;
+            try {
+                const m = await upsertPlayMemory(p, true);
+                if (!m) { alert('剧情还太短，先演几句～'); return; }
                 alert('已记进主线记忆 —— 主聊天里的小千现在知道这场戏了。');
             } catch (e) { alert('记进主线失败：' + e.message); }
         }
