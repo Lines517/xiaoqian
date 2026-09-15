@@ -738,6 +738,7 @@
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>背单词</h2>
                 <button type="button" onclick="importWordList()" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">📥 导入词表</button>
+                <button type="button" onclick="setWordLimit()" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🎲 每日 <span id="wordLimitNum">20</span></button>
                 <button type="button" onclick="loadWords(true)" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">↻</button>
             </div>
             <div id="wordStats" class="voice-hint" style="padding:2px 4px 6px;"></div>
@@ -3176,9 +3177,25 @@ ${text}
 
         function buildWordDeck() {
             const now = Date.now();
-            wordDeck = shuffleArr((wordList || []).filter(w => !w.next_review || new Date(w.next_review).getTime() <= now));
+            const due = (wordList || []).filter(w => !w.next_review || new Date(w.next_review).getTime() <= now);
+            const review = shuffleArr(due.filter(w => (w.stage || 0) > 0));   // 先复习（到期的老词）
+            const fresh = shuffleArr(due.filter(w => (w.stage || 0) === 0));  // 再随机抽新词（打乱，不按字母）
+            wordDeck = review.concat(fresh).slice(0, getWordLimit());
             wordRound = 1; wordPos = 0; wordRevealed = false; wordMissed = [];
             quizDeck = []; quizPos = 0; quizScore = 0;
+        }
+
+        function getWordLimit() {
+            const v = parseInt(localStorage.getItem('cozy_word_limit') || '20', 10);
+            return (isNaN(v) || v < 5) ? 20 : v;
+        }
+        function setWordLimit() {
+            const v = prompt('每天背多少个词？（建议 15~30）', String(getWordLimit()));
+            if (!v) return;
+            const n = parseInt(v, 10);
+            if (isNaN(n) || n < 5) { alert('至少 5 个吧～'); return; }
+            try { localStorage.setItem('cozy_word_limit', String(n)); } catch (e) {}
+            buildWordDeck(); renderWords();
         }
 
         function wordBtn(txt, fn) {
@@ -3196,7 +3213,10 @@ ${text}
             acts.style.flexDirection = 'row';
             card.innerHTML = ''; acts.innerHTML = '';
             const quizPart = quizDeck.length ? ` ｜ 测验 ${Math.min(quizPos, quizDeck.length)}/${quizDeck.length}` : '';
-            if (stats) stats.textContent = `词库 ${(wordList || []).length} 词 ｜ 今天要背 ${wordDeck.length} 个 ｜ 第 ${wordRound} 遍 ${Math.min(wordPos, wordDeck.length)}/${wordDeck.length}${quizPart}`;
+            const limEl = document.getElementById('wordLimitNum');
+            if (limEl) limEl.textContent = String(getWordLimit());
+            const dueAll = (wordList || []).filter(w => !w.next_review || new Date(w.next_review).getTime() <= Date.now()).length;
+            if (stats) stats.textContent = `词库 ${(wordList || []).length} 词 ｜ 到期 ${dueAll} ｜ 今天这批 ${wordDeck.length} 个（第 ${wordRound} 遍 ${Math.min(wordPos, wordDeck.length)}/${wordDeck.length}）${quizPart}`;
 
             if (!wordList || !wordList.length) {
                 card.innerHTML = "<div style='font-size:13px;opacity:0.6;line-height:2;'>词库还是空的。<br>点 ↻ 导入我准备的内置起步词库（60 词），<br>或点「📥 导入词表」粘贴你自己的。</div>";
