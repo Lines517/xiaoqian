@@ -495,6 +495,7 @@
                     <button type="button" onclick="forceCloudSync()" title="同步" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔄</button>
                     <button type="button" id="ttsToggleBtn" onclick="toggleTTS()" title="让小千读出来" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔇</button>
                     <button type="button" onclick="openVoicePanel()" title="选择小千的声音（男声/音调）" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🗣️</button>
+                    <button type="button" onclick="openSettingsPanel()" title="设置（识图模型等）" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">⚙️</button>
                     <button type="button" onclick="triggerMemoryConsolidation(false)" title="整理记忆" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.6; padding:0 4px;">🧠</button>
                 </div>
             </div>
@@ -515,7 +516,18 @@
                 <div class="search-results-list" id="searchResultsList"></div>
             </div>
 
-            <!-- 🗣️ 声音选择面板 -->
+            <!-- ⚙️ 设置面板 -->
+            <div class="search-results-overlay" id="settingsPanel">
+                <div class="search-results-header">
+                    <span style="font-size:13px; font-weight:bold; opacity:0.85;">⚙️ 设置</span>
+                    <button class="back-btn" onclick="closeSettingsPanel()" style="font-size:16px;">关闭 ×</button>
+                </div>
+                <div class="search-results-list" id="settingsList">
+                    <div class="voice-hint" style="margin-bottom:8px;">👁️ <b>识图专用模型</b>：发图片时，<b>先用它</b>把图读成文字，然后再用你上面选的模型跟我聊天。<br>所以你不用为看图来回切模型。</div>
+                    <select id="visionModelSelect" onchange="onVisionModelChange(this.value)" style="width:100%; font-size:12px; padding:6px 8px; border-radius:10px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none; font-family:inherit;"></select>
+                    <div class="voice-hint" id="visionModelHint" style="margin-top:6px;"></div>
+                </div>
+            </div>
             <div class="search-results-overlay" id="voicePanel">
                 <div class="search-results-header">
                     <span style="font-size:13px; font-weight:bold; opacity:0.85;">🗣️ 小千的声音</span>
@@ -856,8 +868,8 @@
         }
 
         // 统一的流式请求：优先走 Supabase Edge Function（若已配置），否则直连模型接口
-        async function openModelStream(completeMessages) {
-            const payload = { model: API_MODEL, messages: completeMessages, stream: true };
+        async function openModelStream(completeMessages, modelOverride) {
+            const payload = { model: modelOverride || API_MODEL, messages: completeMessages, stream: true };
             if (EDGE_FN_URL) {
                 try {
                     const r = await fetch(EDGE_FN_URL, {
@@ -877,7 +889,8 @@
         }
 
         // 统一的"取文本"调用：走流式通道，把整段回复拼好返回（用于识图、总结、评论等）
-        async function callModelText(messages) {            const resp = await openModelStream(messages);
+        async function callModelText(messages, modelOverride) {
+            const resp = await openModelStream(messages, modelOverride);
             if (!resp || !resp.ok || !resp.body) {
                 let msg = "接口出错";
                 try { const j = await resp.json(); msg = (j.error && (j.error.message || j.error)) || msg; } catch (e) {}
@@ -1707,7 +1720,8 @@ ${historyText}
                 btn.innerText = "思考中...";
                 try {
                     const visionPrompt = "请客观、准确地阅读这张图片：1) 如果图中出现文字（包括聊天记录、书本、屏幕、手写、路牌、菜单等），请一字不差地完整转录出来；2) 再用一两句话描述画面的主体内容、色彩与整体氛围。不要编造图中不存在的信息，不要身体动作描写，不要过度抒情。";
-                    const imgDescription = await callModelText([{ role: "user", content: [ { type: "text", text: visionPrompt }, { type: "image_url", image_url: { url: pendingImageBase64 } } ] }]);
+                    // 👁️ 识图单独用「识图专用模型」（默认 Pro），聊天的模型不受影响
+                    const imgDescription = await callModelText([{ role: "user", content: [ { type: "text", text: visionPrompt }, { type: "image_url", image_url: { url: pendingImageBase64 } } ] }], getVisionModel());
                     
                     // 💡 【全新进化：多模态图像连携渲染结构】
                     // 我们把压缩后的 Base64 数据和小千对图片的语义描述用自定义语法结合起来
@@ -4139,6 +4153,49 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
         }
         function closeVoicePanel() {
             const panel = document.getElementById('voicePanel');
+            if (panel) panel.classList.remove('active');
+        }
+
+        // ---- ⚙️ 设置：识图专用模型 ----
+        const VISION_MODEL_DEFAULT = "[企业cli-0.04]gemini-3-pro-preview";
+        function getVisionModelRaw() {
+            try { const v = localStorage.getItem('cozy_vision_model'); if (v) return v; } catch (e) {}
+            return VISION_MODEL_DEFAULT;
+        }
+        // 返回空字符串 = 跟随当前聊天模型
+        function getVisionModel() {
+            const raw = getVisionModelRaw();
+            return raw === 'follow' ? '' : raw;
+        }
+        function onVisionModelChange(v) {
+            try { localStorage.setItem('cozy_vision_model', v); } catch (e) {}
+            updateVisionModelHint();
+        }
+        function updateVisionModelHint() {
+            const el = document.getElementById('visionModelHint');
+            if (!el) return;
+            const raw = getVisionModelRaw();
+            el.textContent = raw === 'follow'
+                ? '当前：跟随聊天模型（' + API_MODEL + '）'
+                : '当前：' + raw + '（发图片时先用它读图）';
+        }
+        function openSettingsPanel() {
+            const panel = document.getElementById('settingsPanel');
+            if (!panel) return;
+            const sel = document.getElementById('visionModelSelect');
+            const src = document.getElementById('modelSelect');
+            if (sel && src) {
+                let html = '<option value="follow">跟随聊天模型</option>';
+                Array.from(src.options).forEach(o => { html += `<option value="${o.value}">${o.value}</option>`; });
+                sel.innerHTML = html;
+                sel.value = getVisionModelRaw();
+                if (sel.selectedIndex < 0) sel.value = 'follow';
+            }
+            updateVisionModelHint();
+            panel.classList.add('active');
+        }
+        function closeSettingsPanel() {
+            const panel = document.getElementById('settingsPanel');
             if (panel) panel.classList.remove('active');
         }
         function renderVoiceList() {
