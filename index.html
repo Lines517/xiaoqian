@@ -1420,6 +1420,8 @@ ${historyText}
             }
             try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
             renderMemoryUI();
+            // 🧬 新的记忆自动进向量库（后台，不影响当前流程）
+            setTimeout(function () { try { indexMemoryItemsToVectors(memoryDb.filter(m => memoryItemDate(m) === dayId)); } catch (e) {} }, 1200);
             return n;
         }
 
@@ -2273,10 +2275,14 @@ Always keep an extremely gentle, mature and equal tone.
             if (!text) return;
             const oldText = item.memory;
             const dbDate = item.date || memoryItemDate(item);
+            const oldKey = memKey(item);
             item.memory = text;
             editingMemoryKey = null;
             try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
             renderMemoryUI();
+            // 向量：旧 key 删掉，新内容重新索引
+            removeMemoryVector(oldKey);
+            indexMemoryItemsToVectors([item]);
             if (dbConnected && db) {
                 try {
                     if (item.cloudId) await db.from('cozy_memories').update({ memory: text }).eq('id', item.cloudId);
@@ -2292,9 +2298,11 @@ Always keep an extremely gentle, mature and equal tone.
             if (!confirm('删掉这一条？')) return;
             const oldText = item.memory;
             const dbDate = item.date || memoryItemDate(item);
+            const oldKey = memKey(item);
             memoryDb = (memoryDb || []).filter(m => m._uid !== uid);   // 只删这一条
             try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
             renderMemoryUI();
+            removeMemoryVector(oldKey);   // 向量也删掉
             if (dbConnected && db) {
                 try {
                     if (item.cloudId) await db.from('cozy_memories').delete().eq('id', item.cloudId);
@@ -2383,6 +2391,34 @@ Always keep an extremely gentle, mature and equal tone.
                 try { await db.from('cozy_mem_vec').upsert(rows, { onConflict: 'source_key' }); done += rows.length; } catch (e) { console.warn('聊天向量写入失败:', e.message); }
             }
             return done;
+        }
+
+        // 只给指定的几条记忆做/更新向量（用于增量）
+        async function indexMemoryItemsToVectors(items) {
+            if (!dbConnected || !db || !items || !items.length) return 0;
+            let done = 0;
+            const BATCH = 16;
+            for (let i = 0; i < items.length; i += BATCH) {
+                const slice = items.slice(i, i + BATCH);
+                let vecs = null;
+                try { vecs = await embedTexts(slice.map(m => String(m.memory).slice(0, 500))); } catch (e) { continue; }
+                if (!vecs) continue;
+                const rows = slice.map((m, k) => ({
+                    source_key: memKey(m),
+                    text: String(m.memory).slice(0, 500),
+                    folder: m.folder || '',
+                    mem_date: String(m.date || memoryItemDate(m)),
+                    embedding: vecs[k]
+                })).filter(r => r.embedding);
+                try { await db.from('cozy_mem_vec').upsert(rows, { onConflict: 'source_key' }); done += rows.length; } catch (e) { console.warn('记忆向量写入失败:', e.message); }
+            }
+            return done;
+        }
+
+        // 删掉某条记忆时，把它对应的向量也删掉（否则会被错误召回）
+        async function removeMemoryVector(key) {
+            if (!dbConnected || !db || !key) return;
+            try { await db.from('cozy_mem_vec').delete().eq('source_key', key); } catch (e) {}
         }
 
         // 用当前这句话，从向量库里捞最相关的旧记忆
