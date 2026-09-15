@@ -2115,9 +2115,15 @@ Always keep an extremely gentle, mature and equal tone.
             });
             const days = Object.keys(groups).sort().reverse();
 
+            // 首次使用时默认把所有分组折叠起来（方便翻）
+            if (localStorage.getItem('cozy_mem_collapsed') === null) {
+                try { localStorage.setItem('cozy_mem_collapsed', JSON.stringify(days)); } catch (e) {}
+            }
+
             const memTitle = document.createElement('div');
-            memTitle.style.cssText = "font-size:12px;font-weight:bold;opacity:0.7;margin-bottom:6px;";
-            memTitle.innerText = `📅 每日记忆（${days.length} 天 · ${memoryDb.length} 条）`;
+            memTitle.style.cssText = "font-size:12px;font-weight:bold;opacity:0.7;margin-bottom:6px; display:flex; align-items:center; gap:8px;";
+            memTitle.innerHTML = `<span>📅 每日记忆（${days.length} 天 · ${memoryDb.length} 条）</span>
+                <button type="button" onclick="toggleAllMemoryGroups()" style="margin-left:auto; font-size:10.5px; padding:2px 8px; border:none; border-radius:8px; background:rgba(143,158,139,0.18); color:var(--text-color); cursor:pointer;">${isAllMemCollapsed(days) ? '全部展开' : '全部折叠'}</button>`;
             container.appendChild(memTitle);
 
             if (days.length === 0) {
@@ -2130,20 +2136,28 @@ Always keep an extremely gentle, mature and equal tone.
 
             days.forEach(d => {
                 const items = groups[d];
+                const isCore = (d === '核心设定' || d === '小千自述');
+                const folded = isMemGroupCollapsed(d);
                 const folder = document.createElement('div');
                 folder.style.cssText = "margin-bottom:12px;";
 
                 const head = document.createElement('div');
-                head.style.cssText = "display:flex; align-items:center; gap:6px; font-size:12px; opacity:0.8; margin-bottom:5px;";
-                head.innerHTML = `<span style="font-weight:bold;">📁 ${d}</span><span style="opacity:0.55; font-size:11px;">（${items.length} 条）</span>`;
-                if (items.length > 1 && d !== '核心设定' && d !== '小千自述') {
+                head.style.cssText = "display:flex; align-items:center; gap:6px; font-size:12px; opacity:0.85; margin-bottom:5px; cursor:pointer; user-select:none;";
+                head.innerHTML = `<span style="font-weight:bold;">${folded ? '▶' : '▼'} 📁 ${d}</span><span style="opacity:0.55; font-size:11px;">（${items.length} 条）</span>`;
+                head.onclick = (ev) => {
+                    if (ev.target && ev.target.tagName === 'BUTTON') return;
+                    toggleMemGroup(d);
+                };
+                if (items.length > 1 && !isCore) {
                     const btn = document.createElement('button');
                     btn.innerText = "🪄 整理";
                     btn.style.cssText = "margin-left:auto; font-size:10.5px; padding:2px 8px; border:none; border-radius:8px; background:rgba(143,158,139,0.18); color:var(--text-color); cursor:pointer;";
-                    btn.onclick = () => organizeMemoriesForDay(d);
+                    btn.onclick = (ev) => { ev.stopPropagation(); organizeMemoriesForDay(d); };
                     head.appendChild(btn);
                 }
                 folder.appendChild(head);
+
+                if (folded) { container.appendChild(folder); return; }
 
                 items.forEach(item => {
                     const div = document.createElement('div');
@@ -2212,6 +2226,30 @@ Always keep an extremely gentle, mature and equal tone.
 
         function startMemoryEdit(uid) { editingMemoryKey = uid; renderMemoryUI(); }
         function cancelMemoryEdit() { editingMemoryKey = null; renderMemoryUI(); }
+
+        // 📁 分组折叠（记住状态）
+        function memCollapsedSet() {
+            try { return new Set(JSON.parse(localStorage.getItem('cozy_mem_collapsed') || '[]')); } catch (e) { return new Set(); }
+        }
+        function saveMemCollapsedSet(s) { try { localStorage.setItem('cozy_mem_collapsed', JSON.stringify([...s])); } catch (e) {} }
+        function isMemGroupCollapsed(d) { return memCollapsedSet().has(d); }
+        function toggleMemGroup(d) {
+            const s = memCollapsedSet();
+            if (s.has(d)) s.delete(d); else s.add(d);
+            saveMemCollapsedSet(s);
+            renderMemoryUI();
+        }
+        function isAllMemCollapsed(days) {
+            const s = memCollapsedSet();
+            return days.length > 0 && days.every(d => s.has(d));
+        }
+        function toggleAllMemoryGroups() {
+            const days = [...new Set((memoryDb || []).map(m => memoryItemDate(m)))];
+            const s = memCollapsedSet();
+            if (isAllMemCollapsed(days)) { days.forEach(d => s.delete(d)); } else { days.forEach(d => s.add(d)); }
+            saveMemCollapsedSet(s);
+            renderMemoryUI();
+        }
 
         async function saveMemoryEdit(uid) {
             const item = (memoryDb || []).find(m => m._uid === uid);
