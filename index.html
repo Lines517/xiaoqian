@@ -461,6 +461,10 @@
                 <span class="icon">📔</span>
                 <span>小千的日记</span>
             </div>
+            <div class="app-icon" onclick="openApp('self')">
+                <span class="icon">🪞</span>
+                <span>小千自述</span>
+            </div>
         </div>
 
         <!-- 💬 App 1：聊天 -->
@@ -634,6 +638,16 @@
             </div>
             <div class="archive-content" id="diaryContent"></div>
         </div>
+
+        <!-- 🪞 App 6：小千自述 -->
+        <div class="app-view" id="view-self">
+            <div class="app-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>小千自述</h2>
+                <button type="button" onclick="renderSelfUI()" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">↻</button>
+            </div>
+            <div class="archive-content" id="selfContent"></div>
+        </div>
     </div>
 
     <script>
@@ -753,6 +767,9 @@
                 const container = document.getElementById('chatMessages');
                 if (container) container.scrollTop = container.scrollHeight;
             }
+            if (appId === 'self') renderSelfUI();
+            if (appId === 'diary') renderDiaryUI();
+            if (appId === 'memory') renderMemoryUI();
         }
 
         function goHome() {
@@ -2637,12 +2654,16 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
         }
 
         // 头像云端同步（尽力而为，表不存在时静默降级到本地）
-        // 🔒 锁定时【绝不】把 avatar_xiaoqian 推上云端——避免本地残留的旧头像覆盖掉她选的情头
+        // 🔒 两条铁律：
+        //   ① 空值绝不上传（避免某台设备没设过头像，就把云端清空）
+        //   ② 头像锁定时不上传 avatar_xiaoqian（避免本地残留的旧头像覆盖她选的情头）
         async function saveAvatarsToCloud(forceAvatar) {
             if (!dbConnected || !db) return;
             try {
-                const payload = { id: 'main', avatar_user: avatarUser };
-                if (forceAvatar || !avatarLocked) payload.avatar_xiaoqian = avatarXiaoqian;
+                const payload = { id: 'main' };
+                if (avatarUser) payload.avatar_user = avatarUser;
+                if ((forceAvatar || !avatarLocked) && avatarXiaoqian) payload.avatar_xiaoqian = avatarXiaoqian;
+                if (Object.keys(payload).length <= 1) return;   // 没有任何有效字段，别发请求
                 await db.from('cozy_profiles').upsert([payload]);
             } catch (e) { /* 云端暂无 cozy_profiles 表时忽略 */ }
         }
@@ -2904,6 +2925,34 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                         <button title="重写这一天" onclick="writeDiaryFor('${d.date}', true)" style="margin-left:auto;background:none;border:none;cursor:pointer;opacity:0.5;font-size:13px;">✍️</button>
                     </div>
                     <div style="font-size:13px;line-height:1.85;margin-top:6px;white-space:pre-wrap;">${escapeMomentHtml(d.content)}</div>`;
+                c.appendChild(div);
+            });
+        }
+
+        // ================= 【🪞 小千自述】 =================
+        function renderSelfUI() {
+            const c = document.getElementById('selfContent');
+            if (!c) return;
+            const items = (memoryDb || []).filter(m => String(m.folder || '').startsWith('核心·小千'));
+            if (items.length === 0) {
+                c.innerHTML = "<div style='font-size:12px;opacity:0.45;text-align:center;padding-top:20px;line-height:1.9;'>还没读到自述。<br>（云端「核心·小千」那几条，稍等同步）</div>";
+                return;
+            }
+            c.innerHTML = '';
+            const tip = document.createElement('div');
+            tip.className = 'voice-hint';
+            tip.style.margin = '0 2px 10px';
+            tip.textContent = '这些是我说过、关于我自己的话。它们被当作「核心设定」存着，每次对话都会带上——所以不管换哪个模型、谁先开口，我都还是我。';
+            c.appendChild(tip);
+            items.forEach(m => {
+                const t = String(m.memory || '');
+                const mm = t.match(/^【([^】]+)】([\s\S]*)$/);
+                const title = mm ? mm[1] : '自述';
+                const body = mm ? mm[2].trim() : t;
+                const div = document.createElement('div');
+                div.className = 'memory-item';
+                div.innerHTML = `<div><strong style="font-size:12.5px;">🪞 ${escapeMomentHtml(title)}</strong></div>
+                    <div style="font-size:13px;line-height:1.85;margin-top:5px;">${escapeMomentHtml(body)}</div>`;
                 c.appendChild(div);
             });
         }
