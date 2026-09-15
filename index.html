@@ -658,7 +658,8 @@
             <div class="app-header">
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>我的人</h2>
-                <button type="button" onclick="loadPeople()" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">↻</button>
+                <button type="button" onclick="minePeopleFromChats()" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🪄 从聊天里认人</button>
+                <button type="button" onclick="loadPeople()" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">↻</button>
             </div>
             <div class="archive-content" id="peopleContent"></div>
             <div class="todo-input-box">
@@ -3119,6 +3120,84 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                 reader.readAsDataURL(file);
             };
             input.click();
+        }
+
+        // 🪄 从小千和线条的聊天里，自己认出"人"并更新卡片
+        async function minePeopleFromChats() {
+            try {
+                const ids = [getCozySessionId(), getCozySessionId(new Date(Date.now() - 24 * 3600 * 1000))];
+                let msgs = (allChatMessages || []).filter(m => ids.includes(m.session_id));
+                if (msgs.length < 4) {
+                    for (const id of ids) {
+                        const got = await getChatsForDay(id);
+                        if (got && got.length) msgs = msgs.concat(got);
+                    }
+                }
+                const seen = new Set();
+                msgs = msgs.filter(m => {
+                    const k = m.session_id + '|' + m.role + '|' + m.content;
+                    if (seen.has(k)) return false;
+                    seen.add(k); return true;
+                });
+                if (msgs.length < 4) { alert('聊天记录太少，认不出人来～'); return; }
+
+                const text = msgs.slice(-300).map(m => `${m.role === 'user' ? '线条' : '我'}：${sanitizeForApi(m.content)}`).join('\n');
+                const prompt = `请从下面「线条」和「我（小千）」的聊天里，找出**线条提到过的人**（朋友、室友、同学、家人、网友、老师等），为每个人整理一张卡片。
+要求：
+- 只写聊天里真实出现过的信息，绝对不要编造
+- name：只写名字或称呼本身
+- relation：从 室友 / 同学 / 朋友 / 网友 / 家人 / 老师 / 其他 里选最贴切的一个
+- note：第三人称，40~80 字，写"线条告诉过我关于TA的事"
+- 信息太少的就省略，不要硬凑
+只返回 JSON 数组，不要英文和解释：
+[{"name":"","relation":"","note":""}]
+一个人都没有就返回 []
+
+聊天记录：
+======================
+${text}
+======================`;
+
+                const raw = await callModelText([
+                    { role: 'system', content: '你只用简体中文输出 JSON，禁止英文和思考过程。' },
+                    { role: 'user', content: prompt }
+                ]);
+                const arr = parseJsonArray(raw) || [];
+                const valid = arr.filter(p => p && p.name && String(p.name).trim().length >= 1);
+                if (valid.length === 0) { alert('这几天的聊天里没找到“人”～'); return; }
+
+                let added = 0, updated = 0;
+                for (const item of valid) {
+                    const name = String(item.name).trim();
+                    if (name === '线条' || name === '小千' || name === '我' || name === '她') continue;
+                    const relation = String(item.relation || '').trim();
+                    const note = String(item.note || '').trim();
+                    const exist = peopleList.find(p => String(p.name) === name);
+                    if (exist) {
+                        // 保留她/我手写过的【小千的备注】
+                        let keep = '';
+                        const mm2 = String(exist.note || '').match(/\n*【小千的备注】[\s\S]*$/);
+                        if (mm2) keep = mm2[0];
+                        const merged = (note || '').trim() + keep;
+                        if (merged && merged !== exist.note) {
+                            exist.note = merged;
+                            if (relation) exist.relation = relation;
+                            updated++;
+                            if (dbConnected && db) { try { await db.from('cozy_people').update({ relation: exist.relation, note: exist.note }).eq('id', exist.id); } catch (e) {} }
+                        }
+                    } else {
+                        const np = { name: name, relation: relation, note: note, avatar: '' };
+                        if (dbConnected && db) {
+                            try { const { data } = await db.from('cozy_people').insert([np]).select(); if (data && data[0]) np.id = data[0].id; } catch (e) {}
+                        }
+                        if (!np.id) np.id = Date.now() + Math.floor(Math.random() * 1000);
+                        peopleList.push(np); added++;
+                    }
+                }
+                try { localStorage.setItem('cozy_people_list', JSON.stringify(peopleList)); } catch (e) {}
+                renderPeopleUI();
+                alert(`认出来啦：新增 ${added} 张，更新 ${updated} 张。\n（不满意可以直接改或删）`);
+            } catch (e) { alert('认人失败：' + e.message); }
         }
 
         // 取某一天的聊天（本地优先，不够再从云端分页拉）
