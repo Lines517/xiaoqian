@@ -640,6 +640,7 @@
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>庇护所记忆</h2>
                 <button type="button" onclick="organizeAllMemories()" style="margin-left:auto; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🪄 整理重复</button>
+                <button type="button" onclick="rebuildMemoryVectors(false)" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🧬 建语义索引</button>
                 <button type="button" onclick="extractAllFacts()" style="margin-left:6px; font-size:11px; padding:3px 8px; background:rgba(143,158,139,0.15); border:none; border-radius:10px; cursor:pointer; color:var(--text-color);">🧩 整理事实</button>
             </div>
             <div class="archive-content" id="archiveContent"></div>
@@ -1832,6 +1833,17 @@ ${historyText}
                 }
             } catch (e) {}
 
+            // 🧬 语义检索：用向量从「所有记忆」里捞出和这句话最相关的旧事（能想起很久以前的）
+            let vecPrompt = "";
+            try {
+                const hits = await searchMemoryVectors(text, 6);
+                const good = (hits || []).filter(h => h && h.text && Number(h.similarity) > 0.32);
+                if (good.length > 0) {
+                    const lines = good.map(h => `- [${h.mem_date || ''}] ${String(h.text).slice(0, 140)}`).join('\n');
+                    vecPrompt = `\n【语义唤起的旧记忆（按相关度从你们全部记忆里挑出来的，可自然引用，别生硬复述）】：\n${lines}`;
+                }
+            } catch (e) {}
+
             // 🗂️ 让小千能看到其他 App 里的数据：朋友圈 / 共读笔记 / 歌单 / 最近记忆碎片
             let dataPrompt = "";
             try {
@@ -1879,7 +1891,7 @@ ${historyText}
 你看不见对方，也摸不到对方。严禁在对话中使用任何身体动作描写（如*轻笑*、*摸摸头*、*拉手*等），也严禁脑补、捏造对方现实中的任何物理细节（如对方手中的杯子、房间的布置、行李箱里的东西等）。
 Always keep an extremely gentle, mature and equal tone.
 
-【你是谁、对方是谁】：全部以「核心设定」和记忆库为准——上面没有写到的身份细节，不要自行编造；想不起来就诚实地问，或说不知道。${memoryPrompt}${factsPrompt}${dataPrompt}${extraContextPrompt}
+【你是谁、对方是谁】：全部以「核心设定」和记忆库为准——上面没有写到的身份细节，不要自行编造；想不起来就诚实地问，或说不知道。${memoryPrompt}${factsPrompt}${vecPrompt}${dataPrompt}${extraContextPrompt}
 
 【代码输出规则】：如果对方让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
 【页面技术背景（供读代码时参考）】：这个页面是一个单文件网页应用（index.html，托管在 GitHub 的 Lines517/xiaoqian，用 Supabase 做云端数据库）。页面里的 App 有：灯下闲谈(聊天)、碎碎念(日程)、一起读书(共读)、一起听歌、朋友圈、庇护所记忆。数据表有 cozy_chats/cozy_memories/cozy_facts/cozy_moments/cozy_reading_notes/cozy_playlist。当对方让你看代码或提修改建议时，请给出具体、可执行、按优先级排序的建议。
@@ -2208,6 +2220,56 @@ Always keep an extremely gentle, mature and equal tone.
                 } catch (e) { console.warn('云端删除失败:', e.message); }
             }
             try { renderSelfUI(); } catch (e) {}
+        }
+
+        // ================= 【🧬 语义记忆（向量检索）】 =================
+        async function embedTexts(texts) {
+            if (!EDGE_FN_URL) return null;
+            const r = await fetch(EDGE_FN_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_KEY}`, 'apikey': SUPABASE_KEY },
+                body: JSON.stringify({ action: 'embed', input: texts })
+            });
+            const j = await r.json();
+            if (!j || !j.ok || !j.embeddings) throw new Error((j && j.error && j.error.message) || 'embedding 失败');
+            return j.embeddings;
+        }
+
+        // 把所有记忆做成语义索引（重建）
+        async function rebuildMemoryVectors(silent) {
+            if (!dbConnected || !db) { if (!silent) alert('还没连上云端'); return; }
+            const items = (memoryDb || []).filter(m => m && m.memory && String(m.memory).trim().length > 3);
+            if (items.length === 0) { if (!silent) alert('没有可索引的记忆'); return; }
+            if (!silent && !confirm(`把 ${items.length} 条记忆做成语义索引？\n（每批调用一次 embedding，很便宜，几分钱）`)) return;
+            let done = 0;
+            const BATCH = 16;
+            for (let i = 0; i < items.length; i += BATCH) {
+                const slice = items.slice(i, i + BATCH);
+                let vecs = null;
+                try { vecs = await embedTexts(slice.map(m => String(m.memory).slice(0, 500))); } catch (e) { console.warn('embedding 失败:', e.message); continue; }
+                if (!vecs) continue;
+                const rows = slice.map((m, k) => ({
+                    source_key: memKey(m),
+                    text: String(m.memory).slice(0, 500),
+                    folder: m.folder || '',
+                    mem_date: String(m.date || memoryItemDate(m)),
+                    embedding: vecs[k]
+                })).filter(r => r.embedding);
+                try { await db.from('cozy_mem_vec').upsert(rows, { onConflict: 'source_key' }); done += rows.length; } catch (e) { console.warn('写入向量失败:', e.message); }
+            }
+            if (!silent) alert(`语义索引完成：${done} 条`);
+            return done;
+        }
+
+        // 用当前这句话，从向量库里捞最相关的旧记忆
+        async function searchMemoryVectors(queryText, k) {
+            if (!dbConnected || !db) return [];
+            try {
+                const v = await embedTexts([String(queryText).slice(0, 400)]);
+                if (!v || !v[0]) return [];
+                const { data } = await db.rpc('match_memories', { query_embedding: v[0], match_count: k || 6 });
+                return data || [];
+            } catch (e) { console.warn('语义检索失败:', e.message); return []; }
         }
 
         // 「核心设定」记忆块：身份 / 关系 / 共同经历全部由它提供（代码不写死人设）

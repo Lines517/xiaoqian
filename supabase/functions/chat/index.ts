@@ -206,6 +206,37 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ---------- 分支一·C：文本向量化（SiliconFlow Embedding，用于语义记忆） ----------
+    if (body.action === "embed") {
+      const sfKeyE = Deno.env.get("SILICON_API_KEY");
+      if (!sfKeyE) return jsonError("服务端未配置 SILICON_API_KEY");
+      const rawInput = Array.isArray(body.input) ? body.input : [body.input];
+      const input = rawInput.map((x: unknown) => String(x == null ? "" : x).slice(0, 1000)).filter((s: string) => s.trim().length > 0);
+      if (!input.length) return jsonError("input 为空");
+      const model = Deno.env.get("EMBED_MODEL") || "BAAI/bge-m3";
+
+      const ctlE = new AbortController();
+      const tmE = setTimeout(() => ctlE.abort(), 40000);
+      try {
+        const r = await fetch("https://api.siliconflow.cn/v1/embeddings", {
+          method: "POST",
+          signal: ctlE.signal,
+          headers: { "Authorization": `Bearer ${sfKeyE}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model, input }),
+        });
+        const j = await r.json();
+        if (!j || !j.data) return jsonError(`embedding 出错 (${r.status}): ${JSON.stringify(j).slice(0, 300)}`);
+        const embeddings = (j.data as any[])
+          .sort((a, b) => (a.index || 0) - (b.index || 0))
+          .map((d) => d.embedding);
+        return jsonOk({ ok: true, model, embeddings });
+      } catch (e) {
+        return jsonError(`embedding 失败：${String(e)}`);
+      } finally {
+        clearTimeout(tmE);
+      }
+    }
+
     // ---------- 分支一·B：文字转语音 ----------
     if (body.action === "tts") {
       const text = String(body.text || "").trim().slice(0, 800);
