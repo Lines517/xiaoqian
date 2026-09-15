@@ -1352,6 +1352,7 @@
         function loadLocalMemories() {
             const local = localStorage.getItem('cozy_local_memories');
             if (local) { try { memoryDb = JSON.parse(local); } catch(e) { memoryDb = []; } }
+            dedupeMemories();
             renderMemoryUI();
         }
 
@@ -1652,6 +1653,7 @@ ${historyText}
                         if (!mKeys.has(key)) { mergedMems.push({ cloudId: c.id, date: c.memory_date, memory: c.memory, emotion: c.emotion, state: c.state, folder: c.folder }); mKeys.add(key); }
                     });
                     memoryDb = mergedMems;
+                    dedupeMemories();
                     try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
                     renderMemoryUI();
                 }
@@ -2147,13 +2149,14 @@ Always keep an extremely gentle, mature and equal tone.
                     const div = document.createElement('div');
                     div.className = "memory-item";
                     div.style.marginLeft = "6px";
+                    const uid = ensureUid(item);
 
-                    if (memKey(item) === editingMemoryKey) {
+                    if (uid === editingMemoryKey) {
                         div.innerHTML = `<div class="todo-edit-row">
                                 <textarea id="memEditBox" style="width:100%;min-height:90px;font-size:13px;line-height:1.7;border:1px solid rgba(27,59,43,0.15);border-radius:10px;padding:8px 10px;background:transparent;color:var(--text-color);outline:none;font-family:inherit;resize:vertical;">${escapeMomentHtml(item.memory || '')}</textarea>
                                 <div class="todo-edit-actions">
                                     <button type="button" class="cancel" onclick="cancelMemoryEdit()">取消</button>
-                                    <button type="button" class="save" onclick="saveMemoryEdit('${memKey(item).replace(/'/g, "\\'")}')">保存</button>
+                                    <button type="button" class="save" onclick="saveMemoryEdit('${uid}')">保存</button>
                                 </div>
                             </div>`;
                         folder.appendChild(div);
@@ -2166,8 +2169,8 @@ Always keep an extremely gentle, mature and equal tone.
                                 <div style="font-size:11px;opacity:0.55;margin-top:3px;">🎭 ${escapeMomentHtml(item.emotion || '')} | 🌱 ${escapeMomentHtml(item.state || '温柔陪伴')}</div>
                             </div>
                             <div class="todo-actions" style="flex-shrink:0;">
-                                <button class="edit-btn" title="修改这条" onclick="startMemoryEdit('${memKey(item).replace(/'/g, "\\'")}')">✎</button>
-                                <button class="delete-btn" title="删除这条" onclick="removeMemoryItem('${memKey(item).replace(/'/g, "\\'")}')">×</button>
+                                <button class="edit-btn" title="修改这条" onclick="startMemoryEdit('${uid}')">✎</button>
+                                <button class="delete-btn" title="删除这条" onclick="removeMemoryItem('${uid}')">×</button>
                             </div>
                         </div>`;
                     folder.appendChild(div);
@@ -2180,11 +2183,38 @@ Always keep an extremely gentle, mature and equal tone.
         let editingMemoryKey = null;
         function memKey(item) { return memoryItemDate(item) + '|' + String(item.memory || '').slice(0, 50); }
 
-        function startMemoryEdit(key) { editingMemoryKey = key; renderMemoryUI(); }
+        // 每条记忆一个唯一编号，删/改只认它，绝不按文字匹配（避免"删一条连坐一串"）
+        function ensureUid(item) {
+            if (!item) return '';
+            if (!item._uid) item._uid = 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+            return item._uid;
+        }
+
+        // 🧹 本地去重：同一组 + 同样文字（忽略空白差异）只留一条
+        function dedupeMemories() {
+            const seen = new Set();
+            const out = [];
+            for (const m of (memoryDb || [])) {
+                if (!m) continue;
+                const k = memoryItemDate(m) + '|' + String(m.memory || '').replace(/\s+/g, ' ').trim();
+                if (seen.has(k)) continue;
+                seen.add(k);
+                out.push(m);
+            }
+            const before = (memoryDb || []).length;
+            memoryDb = out;
+            if (out.length !== before) {
+                console.log(`🧹 记忆去重：${before} → ${out.length}`);
+                try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
+            }
+            return before - out.length;
+        }
+
+        function startMemoryEdit(uid) { editingMemoryKey = uid; renderMemoryUI(); }
         function cancelMemoryEdit() { editingMemoryKey = null; renderMemoryUI(); }
 
-        async function saveMemoryEdit(key) {
-            const item = (memoryDb || []).find(m => memKey(m) === key);
+        async function saveMemoryEdit(uid) {
+            const item = (memoryDb || []).find(m => m._uid === uid);
             if (!item) return;
             const box = document.getElementById('memEditBox');
             const text = (box && box.value || '').trim();
@@ -2204,13 +2234,13 @@ Always keep an extremely gentle, mature and equal tone.
             try { renderSelfUI(); } catch (e) {}
         }
 
-        async function removeMemoryItem(key) {
-            const item = (memoryDb || []).find(m => memKey(m) === key);
+        async function removeMemoryItem(uid) {
+            const item = (memoryDb || []).find(m => m._uid === uid);
             if (!item) return;
-            if (!confirm('删掉这条记忆？')) return;
+            if (!confirm('删掉这一条？')) return;
             const oldText = item.memory;
             const dbDate = item.date || memoryItemDate(item);
-            memoryDb = (memoryDb || []).filter(m => memKey(m) !== key);
+            memoryDb = (memoryDb || []).filter(m => m._uid !== uid);   // 只删这一条
             try { localStorage.setItem('cozy_local_memories', JSON.stringify(memoryDb)); } catch (e) {}
             renderMemoryUI();
             if (dbConnected && db) {
