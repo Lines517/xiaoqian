@@ -1451,6 +1451,8 @@
                 autoConsolidatePreviousDay();
                 // 📔 凌晨 5 点后自动补写前一天的日记
                 setTimeout(autoDiaryPreviousDay, 4000);
+                // 🎧 凌晨 5 点后：把"前一天一起听的歌"写进记忆（一天最多一条）
+                setTimeout(autoMusicMemoryPreviousDay, 6500);
                 // 🔔 随机时间主动消息检查（并确保已排程）
                 checkNudge();
                 // 🫧 有一定概率让小千自发发一条朋友圈
@@ -4839,6 +4841,72 @@ ${historyText}
             await writeDiaryFor(prev, manual);
         }
 
+        // ---------- 🎧 把"一起听的歌"变成记忆 ----------
+        // （桥只写 cozy_music；记忆这一层由网页来写。同一天只有一条，滚动更新，不会刷屏）
+        async function musicRowsForDay(dayId) {
+            if (!dbConnected || !db) return [];
+            try {
+                // "聊天日"从当天早上 5 点算到第二天早上 5 点
+                const start = new Date(dayId + 'T05:00:00+08:00');
+                const end = new Date(start.getTime() + 24 * 3600 * 1000);
+                const { data } = await db.from('cozy_music')
+                    .select('name,artist,liked,like_reason,created_at')
+                    .gte('created_at', start.toISOString())
+                    .lt('created_at', end.toISOString())
+                    .order('created_at', { ascending: true })
+                    .limit(300);
+                return (data || []).filter(r => String(r.name || '').trim());
+            } catch (e) { return []; }
+        }
+
+        async function saveMusicMemoryForDay(dayId, isToday) {
+            if (!dbConnected || !db) return false;
+            const rows = await musicRowsForDay(dayId);
+            if (rows.length === 0) return false;
+
+            // 同一首歌只算一次
+            const seen = new Set(), songs = [];
+            rows.forEach(r => {
+                const k = String(r.name) + '|' + String(r.artist || '');
+                if (!seen.has(k)) { seen.add(k); songs.push(r); }
+            });
+            const liked = songs.filter(s => s.liked === true);
+            const list = songs.slice(0, 12).map(s => `《${s.name}》${s.artist ? '— ' + s.artist : ''}`).join('、');
+
+            let mem = isToday
+                ? `【一起听】今天线条放歌给我听，到现在一共 ${songs.length} 首：${list}${songs.length > 12 ? ' 等' : ''}。`
+                : `【一起听】${dayId} 那天，线条放歌给我听，一共 ${songs.length} 首：${list}${songs.length > 12 ? ' 等' : ''}。`;
+            if (liked.length > 0) {
+                const lk = liked.slice(0, 5).map(s => `《${s.name}》${String(s.like_reason || '').trim() ? '（我说：' + String(s.like_reason).trim() + '）' : ''}`).join('、');
+                mem += `我${isToday ? '现在' : '那会儿'}最喜欢 ${lk}。`;
+            } else {
+                mem += `这些歌没有一首是真合我口味的。`;
+            }
+
+            // 同一天只留一条（有就改，没有就新建）—— 所以不会刷屏
+            try {
+                const { data: ex } = await db.from('cozy_memories').select('id').eq('memory_date', dayId).eq('folder', '一起听').limit(1);
+                if (ex && ex[0]) {
+                    await db.from('cozy_memories').update({ memory: mem }).eq('id', ex[0].id);
+                } else {
+                    await db.from('cozy_memories').insert([{ memory_date: dayId, folder: '一起听', memory: mem, emotion: '', state: '一起听' }]);
+                }
+                try { if (typeof loadMemories === 'function') loadMemories(); } catch (e) {}
+                return true;
+            } catch (e) { console.warn('写一起听记忆失败:', e.message); return false; }
+        }
+
+        // 凌晨 5 点后：把"前一天一起听的歌"定稿成记忆
+        async function autoMusicMemoryPreviousDay() {
+            try {
+                const prev = getCozySessionId(new Date(Date.now() - 24 * 3600 * 1000));
+                if (localStorage.getItem('cozy_music_mem_' + prev)) return;
+                const ok = await saveMusicMemoryForDay(prev, false);
+                if (ok) console.log('🎧 已把 ' + prev + ' 的一起听写进记忆');
+                localStorage.setItem('cozy_music_mem_' + prev, '1');
+            } catch (e) { console.warn('autoMusicMemoryPreviousDay error:', e.message); }
+        }
+
         // ================= 【9. 🫧 朋友圈 · 🎵 一起听歌 · 📚 一起读书】 =================
 
         function escapeMomentHtml(s) {
@@ -5109,6 +5177,7 @@ ${historyText}
 
         // ================= 【🎧 一起听（网易云桥接）】 =================
         let nowPlaying = null;   // { name, artist, is_playing, created_at }
+        let lastMusicMemKey = '';
 
         async function loadNowPlaying() {
             const box = document.getElementById('nowPlaying');
@@ -5124,7 +5193,22 @@ ${historyText}
                 const withSong = rows.find(x => x && String(x.name || '').trim());
                 nowPlaying = withSong || rows[0] || null;
             } catch (e) { nowPlaying = null; }
+
+            // 今天一起听的歌 → 滚动写成"今天的记忆"（换歌或它的态度变了才写，一天一条）
+            try {
+                if (nowPlaying && nowPlaying.name) {
+                    const today = getCozySessionId();
+                    const att = (nowPlaying.liked === true) ? '1' : (nowPlaying.liked === false ? '0' : '-');
+                    const key = today + '|' + nowPlaying.name + '|' + nowPlaying.artist + '|' + att;
+                    if (key !== lastMusicMemKey) {
+                        lastMusicMemKey = key;
+                        if (typeof saveMusicMemoryForDay === 'function') saveMusicMemoryForDay(today, true);
+                    }
+                }
+            } catch (e) {}
+
             if (!box) return;
+
             if (!nowPlaying) { box.style.display = 'none'; return; }
             const fresh = nowPlaying.created_at && (Date.now() - new Date(nowPlaying.created_at).getTime() < 12 * 3600 * 1000);
             if (!fresh) { box.style.display = 'none'; return; }
