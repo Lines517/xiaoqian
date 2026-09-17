@@ -15,6 +15,10 @@ ncm-bridge/listen-state.json
 ncm-bridge/node_modules/
 ncm-bridge/ncm-api/
 
+# 本机跑的网易云 API 服务（几百 MB，纯本地）
+ncm-api/
+*.log
+
 # 私人聊天备份，绝不提交到公开仓库
 backup_cozy_chats.json
 backup_*.json
