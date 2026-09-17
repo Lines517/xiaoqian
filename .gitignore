@@ -4,6 +4,11 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# 模型 API Key（本地脚本从这里读，绝不提交）
+.shufulei_key
+backend/.env
+api/.env
+
 # 私人聊天备份，绝不提交到公开仓库
 backup_cozy_chats.json
 backup_*.json

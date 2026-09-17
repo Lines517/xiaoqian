@@ -13,7 +13,13 @@ $ErrorActionPreference = 'Stop'
 $SUPABASE_URL = "https://kejcaijcqlfmtlfxktrk.supabase.co"
 $SUPABASE_KEY = "sb_publishable_xa16IttRP-xHQdHSiDNCsA_3dOlQutU"
 $API_URL   = "https://shufulei.net/v1/chat/completions"
-$API_KEY   = "fHHaJSoscSQPLyygDFWvE9SvoM7CN3Z3i1BpbTiMwNTtbjx0"
+# 🔑 不硬写 Key：优先读环境变量 SHUFULEI_API_KEY，其次读同目录的 .shufulei_key（已被 gitignore）
+$API_KEY = $env:SHUFULEI_API_KEY
+if (-not $API_KEY) {
+    $__kf = Join-Path $PSScriptRoot ".shufulei_key"
+    if (Test-Path -LiteralPath $__kf) { $API_KEY = (Get-Content -LiteralPath $__kf -Raw -Encoding UTF8).Trim() }
+}
+if (-not $API_KEY) { Write-Host "⚠️ 未找到舒芙蕾 API Key（同目录 .shufulei_key 或环境变量 SHUFULEI_API_KEY）——文件备份照常，AI 记忆生成会跳过。" -ForegroundColor Yellow }
 $API_MODEL = "[企业cli-0.01]gemini-3.5-flash"
 
 $baseDir = "D:\林间一盏灯_聊天备份"

@@ -6,7 +6,13 @@ $ErrorActionPreference = 'Stop'
 $SUPABASE_URL = "https://kejcaijcqlfmtlfxktrk.supabase.co"
 $SUPABASE_KEY = "sb_publishable_xa16IttRP-xHQdHSiDNCsA_3dOlQutU"
 $API_URL   = "https://shufulei.net/v1/chat/completions"
-$API_KEY   = "fHHaJSoscSQPLyygDFWvE9SvoM7CN3Z3i1BpbTiMwNTtbjx0"
+# 🔑 不硬写 Key：优先环境变量 SHUFULEI_API_KEY，其次同目录 .shufulei_key
+$API_KEY = $env:SHUFULEI_API_KEY
+if (-not $API_KEY) {
+    $__kf = Join-Path $PSScriptRoot ".shufulei_key"
+    if (Test-Path -LiteralPath $__kf) { $API_KEY = (Get-Content -LiteralPath $__kf -Raw -Encoding UTF8).Trim() }
+}
+if (-not $API_KEY) { Write-Host "⚠️ 未找到舒芙蕾 API Key（.shufulei_key 或环境变量 SHUFULEI_API_KEY），无法继续。" -ForegroundColor Yellow; exit 1 }
 $API_MODEL = "[企业cli-0.01]gemini-3.5-flash"
 
 $headers = @{ apikey = $SUPABASE_KEY; Authorization = "Bearer $SUPABASE_KEY" }

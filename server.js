@@ -28,7 +28,8 @@ app.post('/api/chat', async (req, res) => {
         return res.status(400).json({ error: "消息格式不正确" });
     }
 
-    const API_KEY = process.env.API_KEY || "fHHaJSoscSQPLyygDFWvE9SvoM7CN3Z3i1BpbTiMwNTtbjx0";
+    // 🔑 只从环境变量读取，绝不把 Key 写进代码（曾经因此泄露过）
+    const API_KEY = process.env.API_KEY || "";
     const API_URL = process.env.API_URL || "https://shufulei.net/v1/chat/completions";
     const API_MODEL = process.env.API_MODEL || "[企业cli-0.01]gemini-3.5-flash";
 
