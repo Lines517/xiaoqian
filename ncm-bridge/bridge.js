@@ -37,6 +37,10 @@ const LIKE_MODE = String(CFG.likeMode || (CFG.autoLike === false ? 'off' : 'smar
 const MY_PLAYLIST_NAME = CFG.playlistName || '小千喜欢的';
 const AUTO_PLAYLIST = CFG.autoPlaylist !== false;
 const PLAYLIST_STATE = path.join(__dirname, 'xq-playlist.json');
+// 上报节流：库里默认 90000ms（90秒内切歌不上报 → 那些歌就"丢了"），这里调小
+const SONG_THROTTLE_MS = Number(CFG.songThrottleMs || 3000);
+// 一首歌要放够这么久，才算"真的听了"（秒切的不算听过，也不问小千、不记记忆，省得刷屏）
+const LISTEN_SETTLE_MS = Number(CFG.listenSettleMs || 15000);
 
 function ts() { return new Date().toLocaleTimeString('zh-CN', { hour12: false }); }
 function log(...a) { console.log('[' + ts() + ']', ...a); }
@@ -383,13 +387,14 @@ async function decideLike(name, artist, songId, lyric) {
 
 // 换歌的处理（同一首只处理一次）
 let lastHandled = '';
-async function handleSong(name, artist) {
+async function handleSong(name, artist, roomSongId) {
     const key = String(name) + '|' + String(artist);
     if (key === lastHandled) return;
     lastHandled = key;
 
     log('🎵 正在放：' + name + ' — ' + artist);
-    const songId = await resolveSongId(name, artist);
+    // 房间里本来就带真实 id，优先用它（搜歌只是兜底，容易搜错翻唱）
+    const songId = roomSongId || await resolveSongId(name, artist);
     const lyric = await fetchLyric(songId);
     if (lyric) log('  📜 抓到歌词 ' + lyric.length + ' 字（喂给它的就是真词）');
     const rowId = await sbInsert({
@@ -404,6 +409,24 @@ async function handleSong(name, artist) {
     }
 }
 
+// 换歌了：等它放够 LISTEN_SETTLE_MS，还在放才算"听过"
+let songSeq = 0;
+let pendingSong = null;
+function onSongChanged(info) {
+    songSeq++;
+    const seq = songSeq;
+    const prev = pendingSong;
+    pendingSong = info;
+    if (!info || !String(info.name || '').trim()) return;
+    setTimeout(() => {
+        if (seq !== songSeq) {
+            if (prev && prev.name) log('⏭ 没听够就切了，跳过：《' + prev.name + '》');
+            return;
+        }
+        handleSong(info.name, info.artist, info.id).catch(e => log('⚠️ 处理歌曲时出错：' + e.message));
+    }, LISTEN_SETTLE_MS);
+}
+
 // ============================================================
 //  启动
 // ============================================================
@@ -414,14 +437,15 @@ try {
         cookie: CFG.cookie,
         partnerUid: String(CFG.partnerUid || ''),
         statePath: path.join(__dirname, 'listen-state.json'),
+        songThrottleMs: SONG_THROTTLE_MS,
         log: (...a) => log('  ·', ...a),
 
         onJoin: ({ roomId }) => {
             log('🎧 进房成功  roomId=' + roomId);
             sbInsert({ song_id: '', name: '', artist: '', is_playing: true, joined: true });
         },
-        onSong: ({ name, artist }) => {
-            handleSong(name, artist).catch(e => log('⚠️ 处理歌曲时出错：' + e.message));
+        onSong: (info) => {
+            onSongChanged(info);
         },
         onLeave: ({ code }) => {
             log('🚪 房间结束了（code=' + code + '）');

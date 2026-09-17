@@ -15,5 +15,10 @@
 
   "_小千的歌单": "它挑中的歌会收进这个歌单（建在小号上，网页里也能看到）。不想要就 autoPlaylist 设 false",
   "playlistName": "小千喜欢的",
-  "autoPlaylist": true
+  "autoPlaylist": true,
+
+  "_上报节流": "库里默认 90000（90秒）——90秒内切歌根本不上报，那些歌就丢了。调小才记得住",
+  "songThrottleMs": 3000,
+  "_听够才算": "一首歌要放够这么久（毫秒）才算'真的听了'；秒切跳过的不问小千、不记记忆，免得刷屏",
+  "listenSettleMs": 15000
 }
