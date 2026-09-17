@@ -1457,6 +1457,8 @@
                 setTimeout(autoDiaryPreviousDay, 4000);
                 // 🎧 凌晨 5 点后：把"前一天一起听的歌"写进记忆（一天最多一条）
                 setTimeout(autoMusicMemoryPreviousDay, 6500);
+                // 🧹 顺手清理一起听的旧数据（每天最多一次）
+                setTimeout(pruneMusicData, 9000);
                 // 🔔 随机时间主动消息检查（并确保已排程）
                 checkNudge();
                 // 🫧 有一定概率让小千自发发一条朋友圈
@@ -4913,6 +4915,23 @@ ${historyText}
                 if (ok) console.log('🎧 已把 ' + prev + ' 的一起听写进记忆');
                 localStorage.setItem('cozy_music_mem_' + prev, '1');
             } catch (e) { console.warn('autoMusicMemoryPreviousDay error:', e.message); }
+        }
+
+        // ---------- 🧹 一起听的数据清理（每天最多一次） ----------
+        // 歌单会一直涨，所以：歌词只留最近 14 天、逐条记录只留最近 60 天。
+        // 长期的"我们一起听过什么"由每天那条「一起听」记忆承载，不会丢。
+        async function pruneMusicData() {
+            if (!dbConnected || !db) return;
+            const today = getCozySessionId();
+            if (localStorage.getItem('cozy_music_prune') === today) return;
+            localStorage.setItem('cozy_music_prune', today);
+            try {
+                const cutLyric = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
+                await db.from('cozy_music').update({ lyric: '' }).lt('created_at', cutLyric).neq('lyric', '');
+                const cutRows = new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString();
+                await db.from('cozy_music').delete().lt('created_at', cutRows);
+                console.log('🧹 一起听数据已清理（歌词留 14 天 / 记录留 60 天）');
+            } catch (e) { console.warn('清理一起听数据失败:', e.message); }
         }
 
         // ================= 【9. 🫧 朋友圈 · 🎵 一起听歌 · 📚 一起读书】 =================
