@@ -1,0 +1,13 @@
+{
+  "_说明": "把这一份复制成 config.json，然后填你自己的值。config.json 已被 gitignore，不会上传。",
+
+  "cookie": "MUSIC_U=在这里粘贴小号的MUSIC_U; __csrf=可留空",
+  "partnerUid": "你自己的网易云 uid（数字，邀请是从你的号发出去的）",
+
+  "apiBase": "http://127.0.0.1:3000",
+  "supabaseUrl": "https://kejcaijcqlfmtlfxktrk.supabase.co",
+  "supabaseKey": "sb_publishable_xa16IttRP-xHQdHSiDNCsA_3dOlQutU",
+
+  "autoLike": true,
+  "announceJoin": true
+}

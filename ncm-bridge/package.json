@@ -1,0 +1,13 @@
+{
+  "name": "xiaoqian-ncm-bridge",
+  "private": true,
+  "version": "1.0.0",
+  "description": "小千 · 网易云「一起听」桥接：进房/换歌 → 写进小灯(Supabase) → 小千能就着歌跟你说话",
+  "main": "bridge.js",
+  "scripts": {
+    "start": "node bridge.js"
+  },
+  "dependencies": {
+    "ncm-listen-together": "github:wuxiandudang-hash/ncm-listen-together"
+  }
+}

@@ -1,4 +1,4 @@
-# 过滤掉本地个人钥匙箱，决不上传泄露！
+﻿# 过滤掉本地个人钥匙箱，决不上传泄露！
 node_modules/
 .env
 .DS_Store
@@ -8,6 +8,12 @@ Thumbs.db
 .shufulei_key
 backend/.env
 api/.env
+
+# 网易云一起听桥接（含 cookie，绝不提交）
+ncm-bridge/config.json
+ncm-bridge/listen-state.json
+ncm-bridge/node_modules/
+ncm-bridge/ncm-api/
 
 # 私人聊天备份，绝不提交到公开仓库
 backup_cozy_chats.json

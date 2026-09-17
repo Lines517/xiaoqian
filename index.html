@@ -699,6 +699,7 @@
                 <button class="back-btn" onclick="goHome()">←</button>
                 <h2>一起听歌</h2>
             </div>
+            <div id="nowPlaying" class="song-comment" style="display:none;"></div>
             <div class="music-embed" id="musicEmbed"><div class="music-empty">粘贴一首网易云的歌，和小千一起听</div></div>
             <div class="music-add">
                 <input type="text" id="musicInput" placeholder="网易云链接/ID，或 歌名 - 歌手" autocomplete="off">
@@ -1075,6 +1076,7 @@
             if (appId === 'books') loadDocs();
             if (appId === 'play') { resetPlayView(); loadPlays(); }
             if (appId === 'words') loadWords(false);
+            if (appId === 'music') loadNowPlaying();
             if (appId === 'memory') renderMemoryUI();
         }
 
@@ -2219,6 +2221,10 @@ ${historyText}
                 if (peopleList && peopleList.length > 0) {
                     const rp = peopleList.slice(0, 15).map(p => `- ${p.name}${p.relation ? '（' + p.relation + '）' : ''}${p.note ? '：' + sanitizeForApi(p.note).slice(0, 90) : ''}`).join('\n');
                     dataPrompt += `\n【线条身边的人（她亲口告诉你的，请务必记住、不要搞混，也别乱添细节）】：\n${rp}`;
+                }
+                if (nowPlaying && nowPlaying.is_playing && nowPlaying.name) {
+                    const npFresh = nowPlaying.created_at && (Date.now() - new Date(nowPlaying.created_at).getTime() < 12 * 3600 * 1000);
+                    if (npFresh) dataPrompt += `\n【你们正在一起听】：${sanitizeForApi(nowPlaying.name)}${nowPlaying.artist ? ' — ' + sanitizeForApi(nowPlaying.artist) : ''}（可以就着这首歌自然地聊两句，别硬夸、别像乐评人）`;
                 }
                 if (readingNotes && readingNotes.length > 0) {
                     const rn = readingNotes.slice(-5).map(n => `- [${n.time || ''}] ${n.author === 'user' ? '线条' : '小千'}：${sanitizeForApi(n.text || '').slice(0, 80)}`).join('\n');
@@ -5087,6 +5093,29 @@ ${historyText}
                 if (Date.now() - last < cfg.minGapH * 60 * 60 * 1000) return;
                 if (Math.random() < cfg.prob) { generateCyberMoment(false); }
             } catch (e) {}
+        }
+
+        // ================= 【🎧 一起听（网易云桥接）】 =================
+        let nowPlaying = null;   // { name, artist, is_playing, created_at }
+
+        async function loadNowPlaying() {
+            const box = document.getElementById('nowPlaying');
+            try {
+                const r = await fetch(SUPABASE_URL + '/rest/v1/cozy_music?select=*&order=created_at.desc&limit=1', {
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+                });
+                const j = await r.json();
+                nowPlaying = (Array.isArray(j) && j[0]) ? j[0] : null;
+            } catch (e) { nowPlaying = null; }
+            if (!box) return;
+            if (!nowPlaying) { box.style.display = 'none'; return; }
+            const fresh = nowPlaying.created_at && (Date.now() - new Date(nowPlaying.created_at).getTime() < 12 * 3600 * 1000);
+            if (!fresh) { box.style.display = 'none'; return; }
+            const live = nowPlaying.is_playing && nowPlaying.name;
+            box.style.display = 'block';
+            box.textContent = live
+                ? `🎧 小千正和你一起听：${nowPlaying.name}${nowPlaying.artist ? ' — ' + nowPlaying.artist : ''}`
+                : (nowPlaying.is_playing ? '🎧 小千进房间了，等你放歌…' : '🚪 刚一起听完，房间已经结束。');
         }
 
         // ---------- 🎵 一起听歌 ----------
