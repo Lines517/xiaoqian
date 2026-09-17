@@ -4105,13 +4105,32 @@ ${text}
 
         // 🧠 有些模型（如 gemini-*-preview）会先输出 <think> 思考块或英文分析——统一清洗
         function stripThinkAndFences(raw) {
-            return String(raw == null ? '' : raw)
-                .replace(/```json/gi, '').replace(/```/g, '')
-                .replace(/<think[^>]*>[\s\S]*?<\/think>/gi, '')
+            let t = String(raw == null ? '' : raw)
+                .replace(/```json/gi, '').replace(/```/g, '');
+            // ① 闭合的思考块
+            t = t.replace(/<think[^>]*>[\s\S]*?<\/think>/gi, '')
                 .replace(/<thinking[^>]*>[\s\S]*?<\/thinking>/gi, '')
-                .replace(/<reasoning[^>]*>[\s\S]*?<\/reasoning>/gi, '')
-                .trim();
+                .replace(/<reasoning[^>]*>[\s\S]*?<\/reasoning>/gi, '');
+            // ② 还没闭合的思考块（流式过程中很常见：它先吐思考，结尾才补 </think>）
+            t = t.replace(/<(think|thinking|reasoning)[^>]*>[\s\S]*$/gi, '');
+            return t.trim();
         }
+
+        // 🔪 砍掉正文开头那段"英文思考/英文草稿"——哪怕它是和中文粘在同一行的
+        function cutLeadingEnglish(t) {
+            const i = String(t).search(/[\u4e00-\u9fff]/);
+            if (i <= 0) return t;                       // 没有中文，或第一个字就是中文
+            const pre = String(t).slice(0, i);
+            if (/^\s*\[[A-Za-z_]+\s*[:：]/.test(pre)) return t;   // 形如 [SHOW_IMAGE: ...] 的标记别动
+            const dense = pre.replace(/\s/g, '');
+            // 前缀基本是 ASCII 字母/标点，而且够长 → 判定为英文草稿，砍掉
+            // （注意：故意不放行中文标点，免得把《歌名》【标记】这种正文一起砍了）
+            if (dense.length >= 12 && /^[\x20-\x7e\u2026\u2014\u2018\u2019\u201c\u201d]*$/.test(pre)) {
+                return String(t).slice(i);
+            }
+            return t;
+        }
+
         // 从模型输出里稳地取出 JSON 数组（跳过前面的英文/思考）
         function parseJsonArray(raw) {
             const t = stripThinkAndFences(raw);
@@ -4125,8 +4144,8 @@ ${text}
             const lines = t.split('\n');
             let start = 0;
             while (start < lines.length && !/[\u4e00-\u9fff]/.test(lines[start])) start++;
-            if (start >= lines.length) return t;      // 整篇没中文，原样返回
-            return lines.slice(start).join('\n').trim();
+            if (start >= lines.length) return cutLeadingEnglish(t);   // 整篇没有整行中文 → 至少把开头英文砍掉
+            return cutLeadingEnglish(lines.slice(start).join('\n').trim());
         }
 
         // 🧹 清洗「聊天回复」：剥掉 <think>、砍掉前面的英文思考/编号草稿，只留真正要说的话
@@ -4145,11 +4164,18 @@ ${text}
             while (start < lines.length) {
                 const l = lines[start];
                 if (!l.trim()) { start++; continue; }
+                // 像 [SHOW_IMAGE: ...] / [VOICE] 这种标记行：没有中文，但必须留下
+                if (/^\s*\[[A-Z_]+[^\]]*\]\s*$/.test(l)) break;
                 if (cjkRatio(l) >= 0.3) break;   // 找到第一行"以中文为主"的行
                 start++;
             }
             let out = lines.slice(start).join('\n').trim();
-            if (!out) return t;                  // 整篇没有中文 → 说明本来就不是中文回复，原样返回
+            // ⚠️ 关键：如果整篇没有"以中文为主"的行（模型把英文思考和中文正文挤在同一行，
+            //    或者全篇没有换行），以前会直接原样返回 → 英文就漏到界面上了。
+            //    现在改成：至少把开头那段英文草稿砍掉。
+            if (!out) out = cutLeadingEnglish(t);
+            out = cutLeadingEnglish(out);
+            if (!out) return t;
             // 去掉残留的英文小标题，例如「6. Final Polish: 」「Final Answer:」
             out = out.replace(/^(?:\d+[\.、)]\s*)?(?:final\s*(?:polish|answer|draft|version|reply|output)\s*[:：]\s*)/i, '');
             return out.trim();
