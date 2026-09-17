@@ -606,6 +606,11 @@
                     <div class="voice-hint" style="margin-bottom:8px;">👁️ <b>识图专用模型</b>：发图片时，<b>先用它</b>把图读成文字，然后再用你上面选的模型跟我聊天。<br>所以你不用为看图来回切模型。</div>
                     <select id="visionModelSelect" onchange="onVisionModelChange(this.value)" style="width:100%; font-size:12px; padding:6px 8px; border-radius:10px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none; font-family:inherit;"></select>
                     <div class="voice-hint" id="visionModelHint" style="margin-top:6px;"></div>
+                    <div class="voice-hint" style="margin:14px 0 6px;">✂️ <b>分条发送</b>：把一条回复拆成几条短消息连着发（更像真人聊天）</div>
+                    <div class="pitch-row">
+                        <button type="button" class="pill" id="burstOnBtn" onclick="onBurstToggle(true)">开</button>
+                        <button type="button" class="pill" id="burstOffBtn" onclick="onBurstToggle(false)">关</button>
+                    </div>
                 </div>
             </div>
             <div class="search-results-overlay" id="voicePanel">
@@ -1156,6 +1161,46 @@
             };
             setTimeout(ping, 4000);
             setInterval(ping, 4 * 60 * 1000);
+        }
+
+        // ================= 【✂️ 分条发送】 =================
+        function getBurstEnabled() { try { return localStorage.getItem('cozy_burst_on') !== '0'; } catch (e) { return true; } }
+        function setBurstEnabled(v) { try { localStorage.setItem('cozy_burst_on', v ? '1' : '0'); } catch (e) {} }
+        function updateBurstButtons() {
+            const on = document.getElementById('burstOnBtn'), off = document.getElementById('burstOffBtn');
+            const v = getBurstEnabled();
+            if (on) on.className = 'pill' + (v ? ' active' : '');
+            if (off) off.className = 'pill' + (v ? '' : ' active');
+        }
+        function onBurstToggle(v) { setBurstEnabled(v); updateBurstButtons(); }
+
+        // ✂️ 把一条回复拆成几条短消息（像真人连发）
+        function splitIntoBursts(text) {
+            const t = String(text == null ? '' : text).trim();
+            if (!t) return [''];
+            // ① 模型自己用 [MSG] 分段 → 完全听它的
+            if (/\[MSG\]/i.test(t)) {
+                const parts = t.split(/\[MSG\]/i).map(s => s.trim()).filter(Boolean);
+                if (parts.length > 1) return parts.slice(0, 6);
+            }
+            // ② 很短就不拆
+            if (t.length <= 70) return [t];
+            // ③ 先按空行拆段
+            let segs = t.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
+            // ④ 还是一整段 → 按句子拆
+            if (segs.length <= 1) segs = t.split(/(?<=[。！？!?…])/).map(s => s.trim()).filter(Boolean);
+            if (segs.length <= 1) return [t];
+            // ⑤ 合并成 2~3 段，别太碎
+            const maxParts = t.length > 400 ? 3 : 2;
+            const target = Math.ceil(t.length / maxParts);
+            const out = [];
+            let buf = '';
+            for (const s of segs) {
+                if (buf && (buf.length + s.length) > target && out.length < maxParts - 1) { out.push(buf); buf = s; }
+                else buf += s;
+            }
+            if (buf) out.push(buf);
+            return out.length > 1 ? out : [t];
         }
 
         // 统一的流式请求：优先走 Supabase Edge Function（若已配置），否则直连模型接口
@@ -2215,7 +2260,8 @@ ${historyText}
 Always keep an extremely gentle, mature and equal tone.
 
 【你是谁、对方是谁】：全部以「核心设定」和记忆库为准——上面没有写到的身份细节，不要自行编造；想不起来就诚实地问，或说不知道。
-【输出铁律】：**只输出你要说给对方听的话本身**。绝对不要输出思考过程、分析、计划、编号步骤（1. 2. 3.）、英文草稿或"Final Polish"这类字样。第一条字就要是你真正想说的话。${memoryPrompt}${factsPrompt}${vecPrompt}${wordPrompt}${dataPrompt}${extraContextPrompt}
+【输出铁律】：**只输出你要说给对方听的话本身**。绝对不要输出思考过程、分析、计划、编号步骤（1. 2. 3.）、英文草稿或"Final Polish"这类字样。第一条字就要是你真正想说的话。
+【分条发送】：如果你想把这段话拆成**几条短消息连着发**（像真人一条条发过来那样），就在两条之间**单独一行**写 [MSG]。不想拆就别写；别拆太碎，一般 2~3 条就好。${memoryPrompt}${factsPrompt}${vecPrompt}${wordPrompt}${dataPrompt}${extraContextPrompt}
 
 【代码输出规则】：如果对方让你写代码，请把代码放在 Markdown 代码块中（例如 \`\`\`html ... \`\`\`），这样她可以直接在网页上点击复制。
 【页面技术背景（供读代码时参考）】：这个页面是一个单文件网页应用（index.html，托管在 GitHub 的 Lines517/xiaoqian，用 Supabase 做云端数据库）。页面里的 App 有：灯下闲谈(聊天)、碎碎念(日程)、一起读书(共读)、一起听歌、朋友圈、庇护所记忆。数据表有 cozy_chats/cozy_memories/cozy_facts/cozy_moments/cozy_reading_notes/cozy_playlist。当对方让你看代码或提修改建议时，请给出具体、可执行、按优先级排序的建议。
@@ -2279,7 +2325,7 @@ Always keep an extremely gentle, mature and equal tone.
                             const delta = parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content;
                             if (delta) {
                                 fullReplyText += delta;
-                                const visible = cleanAssistantReply(fullReplyText.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, ''));
+                                const visible = cleanAssistantReply(fullReplyText.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').replace(/\[MSG\]/gi, '\n'));
                                 try { aiBubbleTextEl.innerHTML = messageContentToHtml(visible || '…'); }
                                 catch (me) { aiBubbleTextEl.innerHTML = visible.replace(/\n/g, '<br>'); }
                                 container.scrollTop = container.scrollHeight;
@@ -2296,17 +2342,31 @@ Always keep an extremely gentle, mature and equal tone.
                 const wantsVoice = /\[VOICE\]/i.test(replyText); // 小千想用真嗓子说这句
                 const finalReply = applyReplyTokens(cleanAssistantReply(replyText));
                 if (!finalReply) throw new Error("收到空白回复");
-                setAvatarLock(true); // 本轮处理完重新上锁：模型只在被明确要求时才能换头像
-                aiBubbleTextEl.innerHTML = messageContentToHtml(finalReply);
-                if (wantsVoice) markVoiceWanted(aiBubbleTextEl, finalReply);
-                else attachSpeakButton(aiBubbleTextEl, finalReply);
+                setAvatarLock(true);
+
+                // ✂️ 分条发送：像真人那样连着发几条短消息
+                const bursts = getBurstEnabled() ? splitIntoBursts(finalReply) : [finalReply];
+                aiBubbleTextEl.innerHTML = messageContentToHtml(bursts[0]);
+                if (wantsVoice) markVoiceWanted(aiBubbleTextEl, bursts[0]);
+                else attachSpeakButton(aiBubbleTextEl, bursts[0]);
                 if (ttsEnabled) speakText(finalReply);
 
-                const aiMsg = { session_id: currentSessionId, role: "assistant", content: finalReply, time: getNowTimeStr() };
-                allChatMessages.push(aiMsg);
-                saveChats();
+                for (let bi = 0; bi < bursts.length; bi++) {
+                    if (bi > 0) {
+                        // 第 2 条起：等一下再发，像在打字
+                        const wait = 700 + Math.min(1600, bursts[bi].length * 22);
+                        await new Promise(res => setTimeout(res, wait));
+                        appendMessageUI('assistant', bursts[bi], getNowTimeStr());
+                    }
+                    const aiMsg = { session_id: currentSessionId, role: "assistant", content: bursts[bi], time: getNowTimeStr() };
+                    allChatMessages.push(aiMsg);
+                    saveChats();
+                    if (dbConnected && db) {
+                        try { await db.from('cozy_chats').insert([{ session_id: currentSessionId, role: 'assistant', content: bursts[bi] }]); } catch (e) {}
+                    }
+                }
                 // 🧬 后台悄悄把刚才这几句也向量化（不阻塞回复）
-                setTimeout(function () { try { indexChatsToVectors(4); } catch (e) {} }, 1500);
+                setTimeout(function () { try { indexChatsToVectors(6); } catch (e) {} }, 1500);
 
                 // 对新生成的代码块进行渲染和高亮
                 aiBubbleTextEl.querySelectorAll('pre').forEach(pre => {
@@ -4009,6 +4069,7 @@ ${text}
             s = s.replace(/\[SHOW_IMAGE:\s*[^\]]+\]/gi, '');
             s = s.replace(/\[MOMENT_IMG:\s*[^\]]+\]/gi, '');
             s = s.replace(/\[VOICE\]/gi, '');
+            s = s.replace(/\[MSG\]/gi, ' ');
             return s.trim();
         }
 
@@ -5576,6 +5637,7 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
                 if (sel.selectedIndex < 0) sel.value = 'follow';
             }
             updateVisionModelHint();
+            updateBurstButtons();
             panel.classList.add('active');
         }
         function closeSettingsPanel() {
