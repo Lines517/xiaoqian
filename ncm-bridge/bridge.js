@@ -286,18 +286,79 @@ async function ensureMyPlaylist() {
 }
 
 const inPlaylist = new Set();
-async function addToMyPlaylist(songId, name, artist) {
-    if (!AUTO_PLAYLIST || !songId) return;
-    if (inPlaylist.has(String(songId))) return;
-    inPlaylist.add(String(songId));
-    const pid = await ensureMyPlaylist();
-    if (!pid) return;
+async function addTrackToPlaylist(pid, songId, name, artist) {
+    if (!pid || !songId) return false;
+    const key = String(pid) + ':' + String(songId);
+    if (inPlaylist.has(key)) return true;
+    inPlaylist.add(key);
     try {
         const j = await ncmGet('/playlist/tracks?op=add&pid=' + pid + '&tracks=' + songId);
         const ok = j && (j.status === 200 || j.code === 200);
-        if (ok) log('  🎵 也收进它自己的歌单了：' + name + ' — ' + artist);
+        if (ok) log('  🎵 收进它自己的歌单：' + name + ' — ' + artist);
         else log('  ⚠️ 收进歌单失败：' + JSON.stringify(j).slice(0, 140));
-    } catch (e) { log('  ⚠️ 收进歌单出错：' + e.message); }
+        return !!ok;
+    } catch (e) { log('  ⚠️ 收进歌单出错：' + e.message); return false; }
+}
+
+async function addToMyPlaylist(songId, name, artist) {
+    if (!AUTO_PLAYLIST || !songId) return false;
+    const pid = await ensureMyPlaylist();
+    return await addTrackToPlaylist(pid, songId, name, artist);
+}
+
+// ============================================================
+//  🎁 小千自己点的歌
+//  网页（浏览器）调不到本机的网易云 API，所以她把点歌请求写进
+//  云端表 cozy_music_self，这里轮询到就去搜歌、加进它自己的歌单。
+// ============================================================
+async function searchSong(keyword) {
+    try {
+        const r = await fetch(NCM_API + '/search?keywords=' + encodeURIComponent(keyword) + '&limit=1&timestamp=' + Date.now(), { headers: HDR_NCM });
+        const j = await r.json();
+        const hit = j && j.result && j.result.songs && j.result.songs[0];
+        if (!hit) return null;
+        const artists = (hit.artists || hit.ar || []).map(a => a.name).join('/');
+        return { id: hit.id, name: hit.name, artist: artists };
+    } catch (e) { return null; }
+}
+
+async function sbPatchSelf(id, patch) {
+    if (!SB_KEY || !id) return;
+    try {
+        await fetch(SB_URL + '/rest/v1/cozy_music_self?id=eq.' + id, {
+            method: 'PATCH',
+            headers: Object.assign({ 'Prefer': 'return=minimal' }, HDR_SB),
+            body: JSON.stringify(patch)
+        });
+    } catch (e) { }
+}
+
+let selfBusy = false;
+async function processSelfRequests() {
+    if (!AUTO_PLAYLIST || selfBusy) return;
+    selfBusy = true;
+    try {
+        const r = await fetch(SB_URL + '/rest/v1/cozy_music_self?select=*&status=eq.pending&order=created_at.asc&limit=5', { headers: HDR_SB });
+        const rows = await r.json();
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        for (const row of rows) {
+            const kw = String(row.keyword || '').trim();
+            if (!kw) { await sbPatchSelf(row.id, { status: 'failed' }); continue; }
+            log('🎁 小千自己点了一首：《' + kw + '》' + (row.reason ? '（' + row.reason + '）' : ''));
+            const hit = await searchSong(kw);
+            if (!hit) { log('  ⚠️ 搜不到这首，标记失败'); await sbPatchSelf(row.id, { status: 'failed' }); continue; }
+            const pid = await ensureMyPlaylist();
+            const ok = await addTrackToPlaylist(pid, hit.id, hit.name, hit.artist);
+            if (ok) {
+                await sbPatchSelf(row.id, { status: 'done', song_id: String(hit.id), name: hit.name, artist: hit.artist });
+                log('  ✅ 已经加进它自己的歌单了');
+            } else {
+                await sbPatchSelf(row.id, { status: 'failed' });
+            }
+        }
+    } catch (e) {
+        // 表还没建的时候会一直报错，安静跳过
+    } finally { selfBusy = false; }
 }
 
 // 决定要不要点，返回 {liked, why}
@@ -394,6 +455,9 @@ try {
     const modeText = { smart: '问过小千，她喜欢才点', all: '新歌全点', off: '不点' }[LIKE_MODE] || LIKE_MODE;
     log('♥ 红心方式：' + modeText);
     if (AUTO_PLAYLIST) await ensureMyPlaylist();
+    // 🎁 每 20 秒看一眼：小千有没有自己点歌
+    await processSelfRequests();
+    setInterval(() => { processSelfRequests(); }, 20000);
 
     lt.arm(true);
     lt.start();

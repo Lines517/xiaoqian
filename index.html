@@ -711,6 +711,8 @@
             </div>
             <div class="playlist" id="playlist"></div>
             <button type="button" class="cyber-btn" style="margin-top:10px;" onclick="xiaoqianTalkSong()">🎧 让小千说说这首歌</button>
+            <button type="button" class="cyber-btn" style="margin-top:10px;" onclick="askXiaoqianToPick()">🎁 让小千自己挑一首收藏</button>
+            <div id="xqPickStatus" style="font-size:12px; opacity:0.6; margin-top:6px; line-height:1.5;"></div>
             <div class="song-comment" id="songComment"></div>
         </div>
 
@@ -2298,6 +2300,7 @@ Always keep an extremely gentle, mature and equal tone.
 【主动配图规则】：当对方说想看图片、想看图、让你发张图，或当下意境特别适合一幅画面时，请务必在回复里单独一行输出 [SHOW_IMAGE: 英文图片关键词]（2~3个英文词，逗号分隔，例如 [SHOW_IMAGE: moon, forest]）。系统会自动为你配上一张对应的图片，你只需在图片旁配一句简短的话即可。
 【读图规则】：对方发来图片时，你会先看到对图片的文字转述（可能包含图中文字）。请基于这些内容自然地回应；如果图里有文字，可以提到你看到了什么字。
 【更换头像规则】：只有对方**明确让你换头像**（例如说"换个头像吧"）时，才可以单独一行写 [SET_AVATAR: 英文关键词]（例如 [SET_AVATAR: starry, night]）。其余任何时候都**不要主动换头像**——她为你选的头像要保留。
+【点歌规则】：如果她问你"你想听什么/给我推荐一首"，或者你聊到某首歌是真的想让她听，可以在回复的**单独一行**写 [ADD_SONG: 歌名 - 歌手]，系统会把它加进**你自己的歌单**（然后就真的在网易云里了）。一次最多一首，别滥用——你是有脾气的，不是推荐机器。
 【真嗓子规则】：你有一副独一无二的真实声音。当你**真的想把这句话说给她听**时——尤其是她在难过、累了、需要人陪，或你想认真说一句重要的话——就在整条回复的**单独一行**写 [VOICE]，系统会用你的真嗓子把这条读出来。平时别滥用（她给你定的额度大概是每天几句），也不要每句都加。
 【链接阅读规则】：如果消息里出现【线条发来的链接：…】这一段，那是系统替你打开网页后抓到的内容，请基于它自然回应；如果里面写着"打不开/需要登录/有反爬"，就诚实地告诉她你打不开这篇，请她截图或把关键内容贴给你，不要假装看过。`;
 
@@ -2370,6 +2373,11 @@ Always keep an extremely gentle, mature and equal tone.
                     replyText = replyText.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
                 }
                 const wantsVoice = /\[VOICE\]/i.test(replyText); // 小千想用真嗓子说这句
+                // 🎁 小千自己点歌：它写了 [ADD_SONG: 歌名 - 歌手] 就替它加进它自己的歌单
+                try {
+                    const pick = replyText.match(/\[ADD_SONG\s*[:：]\s*([^\]]+)\]/i);
+                    if (pick && pick[1].trim()) queueAddSongForXiaoqian(pick[1].trim(), '它自己在聊天里点的');
+                } catch (e) {}
                 const finalReply = applyReplyTokens(cleanAssistantReply(replyText));
                 if (!finalReply) throw new Error("收到空白回复");
                 setAvatarLock(true);
@@ -4220,9 +4228,10 @@ ${text}
         // 处理小千回复里的特殊指令，返回清理后的正文
         function applyReplyTokens(text) {
             let out = String(text == null ? '' : text);
-            // 🔒 头像已焊死：模型的换头像指令一律只抹掉、不执行
+            // 只抹掉"要执行的"标记，真正的执行在别处（避免误触发）
             out = out.replace(/\[SET_AVATAR:\s*[^\]]+\]/gi, '').trim();
             out = out.replace(/\[VOICE\]/gi, '').trim();
+            out = out.replace(/\[ADD_SONG\s*[:：][^\]]*\]/gi, '').trim();
             return out;
         }
 
@@ -5302,30 +5311,81 @@ ${historyText}
             try { localStorage.setItem('cozy_playlist', JSON.stringify(playlist.slice(0, 50))); } catch (e) {}
         }
 
-        // ♥ 小千自己从"一起听"里挑出来的歌（她判断喜欢才收）
+        // ♥ 小千自己的歌单：① 她放歌时它挑中的 ② 它自己点的
         async function loadXiaoqianLikes() {
             const wrap = document.getElementById('xqLikesWrap'), list = document.getElementById('xqLikes');
             if (!wrap || !list) return;
             if (!dbConnected || !db) { wrap.style.display = 'none'; return; }
+            const seen = new Set(), items = [];
             try {
                 const { data } = await db.from('cozy_music')
                     .select('name,artist,like_reason,created_at')
                     .eq('liked', true)
                     .order('created_at', { ascending: false })
                     .limit(60);
-                const seen = new Set(), items = [];
                 (data || []).forEach(r => {
                     const k = String(r.name || '').trim();
                     if (!k || seen.has(k)) return;
-                    seen.add(k); items.push(r);
+                    seen.add(k); items.push({ name: r.name, artist: r.artist, why: r.like_reason || '' });
                 });
-                if (items.length === 0) { wrap.style.display = 'none'; return; }
-                wrap.style.display = 'block';
-                list.innerHTML = items.slice(0, 30).map(r => {
-                    const why = String(r.like_reason || '').trim();
-                    return `<div class="playlist-item" title="${escapeMomentHtml(why)}"><span>${escapeMomentHtml(r.name)}${r.artist ? ' — ' + escapeMomentHtml(r.artist) : ''}</span></div>`;
-                }).join('');
-            } catch (e) { wrap.style.display = 'none'; }
+            } catch (e) { }
+            // 它自己点的歌（桥那边加进网易云歌单后会把 name/artist 写回来）
+            try {
+                const { data } = await db.from('cozy_music_self')
+                    .select('name,artist,reason,status,created_at')
+                    .eq('status', 'done')
+                    .order('created_at', { ascending: false })
+                    .limit(40);
+                (data || []).forEach(r => {
+                    const k = String(r.name || r.artist || '').trim();
+                    if (!k || seen.has(k)) return;
+                    seen.add(k); items.push({ name: r.name, artist: r.artist, why: r.reason || '' });
+                });
+            } catch (e) { }
+            if (items.length === 0) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+            list.innerHTML = items.slice(0, 40).map(r => {
+                const why = String(r.why || '').trim();
+                return `<div class="playlist-item" title="${escapeMomentHtml(why)}"><span>${escapeMomentHtml(r.name)}${r.artist ? ' — ' + escapeMomentHtml(r.artist) : ''}</span></div>`;
+            }).join('');
+        }
+
+        // ---------- 🎁 小千自己点歌 ----------
+        // 网页没法直接调本机的网易云 API（跨域/http 限制），
+        // 所以先把"点歌请求"写进云端，桥在那边轮询到就去加进它自己的歌单。
+        async function queueAddSongForXiaoqian(keyword, reason) {
+            if (!keyword) return false;
+            if (!dbConnected || !db) { console.warn('没连上云端，点歌请求没发出去'); return false; }
+            try {
+                await db.from('cozy_music_self').insert([{ keyword: keyword, reason: reason || '', status: 'pending' }]);
+                return true;
+            } catch (e) { console.warn('点歌请求写入失败（表可能还没建）:', e.message); return false; }
+        }
+
+        async function askXiaoqianToPick() {
+            const box = document.getElementById('xqPickStatus');
+            const set = (t) => { if (box) box.textContent = t; };
+            set('小千在想…');
+            try {
+                const sys = `${identityBlock()}
+
+你要**给线条挑一首歌**，收进你自己的歌单（那是你的歌单，所以挑你自己真的喜欢的）。
+只回两行，不要别的话：
+SONG: 歌名 - 歌手
+WHY: 一句话（25 字以内，为什么想让她听这首）`;
+                const raw = stripThinkAndFences(await callModelText([{ role: 'system', content: sys }, { role: 'user', content: '挑一首吧。' }]));
+                const m = raw.match(/SONG\s*[:：]\s*(.+)/i);
+                const w = raw.match(/WHY\s*[:：]\s*(.+)/i);
+                if (!m || !m[1].trim()) { set('它没挑出来，再点一次试试～'); return; }
+                const kw = m[1].replace(/[\r\n]+/g, ' ').replace(/["'“”]/g, '').trim().slice(0, 60);
+                const why = w ? w[1].replace(/[\r\n]+/g, ' ').trim().slice(0, 60) : '';
+                const ok = await queueAddSongForXiaoqian(kw, why);
+                if (ok) {
+                    set('🎁 小千挑了《' + kw + '》' + (why ? '——' + why : '') + '\n已交给它，一两分钟后它自己的歌单里就有了。');
+                } else {
+                    set('没发出去（云端那张表可能还没建）。');
+                }
+            } catch (e) { set('它想岔了：' + e.message); }
         }
         function renderPlaylist() {
             const list = document.getElementById('playlist');
