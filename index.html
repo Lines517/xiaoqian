@@ -3579,9 +3579,30 @@ ${text}
                 const div = document.createElement('div');
                 div.className = 'todo-item';
                 div.innerHTML = `<div class="todo-item-main"><span>📄 ${escapeMomentHtml(d.title)}<span style="opacity:0.5;font-size:11px;">（${d.chunks} 段）</span></span></div>
-                    <div class="todo-actions"><button class="delete-btn" onclick="deleteDoc(${i})">×</button></div>`;
+                    <div class="todo-actions">
+                        <button class="edit-btn" title="改名" onclick="renameDoc(${i})">✎</button>
+                        <button class="delete-btn" onclick="deleteDoc(${i})">×</button>
+                    </div>`;
                 c.appendChild(div);
             });
+        }
+
+        // ✎ 给教材改名（只改名字和标签，不用重新向量化，省钱又快）
+        async function renameDoc(i) {
+            const d = docsList[i];
+            if (!d) return;
+            const name = prompt('改成什么名字？', d.title);
+            if (!name) return;
+            const newTitle = name.trim();
+            if (!newTitle || newTitle === d.title) return;
+            if (!dbConnected || !db) return;
+            setDocStatus('✎ 正在改名…');
+            try {
+                await db.from('cozy_docs').update({ title: newTitle }).eq('title', d.title);
+                try { await db.from('cozy_mem_vec').update({ folder: '教材·' + newTitle }).like('source_key', 'doc:' + d.title + '#%'); } catch (e) {}
+                setDocStatus('✅ 已改名为：' + newTitle);
+                loadDocs();
+            } catch (e) { setDocStatus('改名失败：' + e.message); }
         }
 
         async function deleteDoc(i) {
@@ -3605,17 +3626,65 @@ ${text}
             importPlainText(title, text).then(() => loadDocs());
         }
 
-        function renderBookUI() { 
-            const container = document.getElementById('bookListContainer'); 
-            container.innerHTML = ""; 
-            if (bookList.length === 0) { container.innerHTML = "<div style='font-size:12px;opacity:0.4; text-align:center;'>书架空空如也</div>"; return; } 
-            bookList.forEach(item => { 
-                const div = document.createElement('div'); 
-                div.className = "book-item"; 
-                div.innerHTML = `<span class="book-name">《${item.book_name}》</span><span class="book-author">${item.author || '未知'} · 共读 ✎</span>`; 
+        let editingBookId = null;
+        function renderBookUI() {
+            const container = document.getElementById('bookListContainer');
+            container.innerHTML = "";
+            if (bookList.length === 0) { container.innerHTML = "<div style='font-size:12px;opacity:0.4; text-align:center;'>书架空空如也</div>"; return; }
+            bookList.forEach(item => {
+                const div = document.createElement('div');
+                div.className = "book-item";
+                if (String(item.id) === String(editingBookId)) {
+                    div.innerHTML = `<div class="todo-edit-row">
+                            <input type="text" id="bookEditName" value="${escapeMomentHtml(item.book_name || '')}" placeholder="书名">
+                            <input type="text" id="bookEditAuthor" value="${escapeMomentHtml(item.author || '')}" placeholder="作者">
+                            <div class="todo-edit-actions">
+                                <button type="button" class="cancel" onclick="cancelBookEdit()">取消</button>
+                                <button type="button" class="save" onclick="saveBookEdit(${item.id})">保存</button>
+                            </div>
+                        </div>`;
+                    container.appendChild(div);
+                    return;
+                }
+                div.innerHTML = `<span class="book-name">《${escapeMomentHtml(item.book_name)}》</span>
+                    <span class="book-author" style="flex:1;">${escapeMomentHtml(item.author || '未知')} · 共读 ✎</span>
+                    <span class="todo-actions" style="flex-shrink:0;">
+                        <button class="edit-btn" title="修改书名/作者" onclick="event.stopPropagation();editBookItem(${item.id})">✎</button>
+                        <button class="delete-btn" title="删除" onclick="event.stopPropagation();deleteBookItem(${item.id})">×</button>
+                    </span>`;
                 div.onclick = () => openBookNotes(item.id, item.book_name);
-                container.appendChild(div); 
-            }); 
+                container.appendChild(div);
+            });
+        }
+
+        function editBookItem(id) { editingBookId = id; renderBookUI(); }
+        function cancelBookEdit() { editingBookId = null; renderBookUI(); }
+        async function saveBookEdit(id) {
+            const item = bookList.find(b => String(b.id) === String(id));
+            if (!item) return;
+            const n = document.getElementById('bookEditName'), a = document.getElementById('bookEditAuthor');
+            const nm = (n && n.value || '').trim();
+            if (nm) item.book_name = nm;
+            if (a) item.author = (a.value || '').trim() || '未知';
+            editingBookId = null;
+            try { localStorage.setItem('cozy_local_books', JSON.stringify(bookList)); } catch (e) {}
+            renderBookUI();
+            if (dbConnected && db) { try { await db.from('cozy_books').update({ book_name: item.book_name, author: item.author }).eq('id', id); } catch (e) {} }
+        }
+
+        async function deleteBookItem(id) {
+            const item = bookList.find(b => String(b.id) === String(id));
+            if (!item) return;
+            if (!confirm('把《' + item.book_name + '》从书架删掉吗？\n（它的共读笔记也会一起删掉）')) return;
+            bookList = bookList.filter(b => String(b.id) !== String(id));
+            readingNotes = (readingNotes || []).filter(n => String(n.bookId) !== String(id));
+            try { localStorage.setItem('cozy_local_books', JSON.stringify(bookList)); } catch (e) {}
+            try { localStorage.setItem('cozy_reading_notes', JSON.stringify(readingNotes)); } catch (e) {}
+            renderBookUI();
+            if (dbConnected && db) {
+                try { await db.from('cozy_books').delete().eq('id', id); } catch (e) {}
+                try { await db.from('cozy_reading_notes').delete().eq('book_id', id); } catch (e) {}
+            }
         }
         
         async function addBookItem() { 
