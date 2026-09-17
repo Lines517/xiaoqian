@@ -1374,19 +1374,23 @@
 
             // 稍微延长 300 毫秒，等手机浏览器的 DOM、CORS 环境和 SDK 彻底加载完毕后，再进行同步拉回
             setTimeout(async () => {
-                const connected = await autoHealConnection();
+                // 🖼️ 先把头像拉回来：直接用 REST（不依赖 SDK、不依赖后面的同步流程）
+                // 这一步是"必须成功"的——以前它排在 syncWithCloud 后面，一旦前面出错就永远拉不回
+                loadAvatarsFromRest();
+                let connected = false;
+                try { connected = await autoHealConnection(); } catch (e) { console.warn('连接失败:', e); }
                 if (connected) {
-                    await syncWithCloud();
-                    await loadAvatarsFromCloud();
-                    await loadMoments();
-                    await loadDiary();
-                    await loadPeople();
-                    await loadPlaylist();
-                    await loadReadingNotes();
-                    await loadFacts();
-                    await loadDays();
-                    await ensureCloudSessionVisible();
-                    setTimeout(checkAutoMemory, 3000); 
+                    try { await syncWithCloud(); } catch (e) { console.warn('云端同步失败:', e); }
+                    try { await loadAvatarsFromCloud(); } catch (e) {}
+                    try { await loadMoments(); } catch (e) {}
+                    try { await loadDiary(); } catch (e) {}
+                    try { await loadPeople(); } catch (e) {}
+                    try { await loadPlaylist(); } catch (e) {}
+                    try { await loadReadingNotes(); } catch (e) {}
+                    try { await loadFacts(); } catch (e) {}
+                    try { await loadDays(); } catch (e) {}
+                    try { await ensureCloudSessionVisible(); } catch (e) {}
+                    setTimeout(checkAutoMemory, 3000);
                 }
                 // 同步完数据后重新精准强制刷新视图，这在手机网络卡顿时极其关键
                 renderDateTabs(); 
@@ -4144,6 +4148,29 @@ ${text}
         // 🔒🔒 头像已彻底锁死：前端【永不】上传头像到云端。
         // 想换头像 → 在 OpenCode 里跟小千说，由她从服务端改（几秒钟的事）。
         async function saveAvatarsToCloud(forceAvatar) { return; }
+
+        // 🖼️ 直接用 REST 把头像拉回来（不走 SDK，最稳；只读，不写云端）
+        async function loadAvatarsFromRest() {
+            try {
+                const r = await fetch(SUPABASE_URL + '/rest/v1/cozy_profiles?select=avatar_xiaoqian,avatar_user&id=eq.main', {
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+                });
+                const j = await r.json();
+                if (!Array.isArray(j) || !j[0]) return;
+                let changed = false;
+                if (j[0].avatar_xiaoqian && j[0].avatar_xiaoqian !== avatarXiaoqian) {
+                    avatarXiaoqian = j[0].avatar_xiaoqian;
+                    try { localStorage.setItem('cozy_avatar_xiaoqian', avatarXiaoqian); } catch (e) {}
+                    changed = true;
+                }
+                if (j[0].avatar_user && j[0].avatar_user !== avatarUser) {
+                    avatarUser = j[0].avatar_user;
+                    try { localStorage.setItem('cozy_avatar_user', avatarUser); } catch (e) {}
+                    changed = true;
+                }
+                if (changed) { refreshAvatarsInDom(); renderHomeCards(); }
+            } catch (e) { console.warn('REST 拉头像失败:', e.message); }
+        }
 
         async function loadAvatarsFromCloud() {
             if (!dbConnected || !db) return;
