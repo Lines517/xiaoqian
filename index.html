@@ -2009,6 +2009,7 @@ ${historyText}
             const input = document.getElementById('userInput');
             const btn = document.getElementById('sendBtn');
             let text = input.value.trim();
+            const userTyped = text;   // 🧠 她的"原话"（不含图片标记和小千的看图描述），用于判断意图
             userSetAvatarThisTurn = false;
             
             if (!text && !pendingImageBase64) return;
@@ -2059,9 +2060,10 @@ ${historyText}
                 appendSystemMessage("🔓 头像锁已解开。发一张新图 + 说“换成这个头像”就能换；换完会自动重新锁上。");
             }
 
-            // 如果线条把图片说成“头像”，就用这张图给小千换上，并上锁（模型以后不能覆盖）
+            // 只有线条【专门】说"换这个头像"（原话很短 + 提到头像）时，才用这张图换头像
+            // 👉 避免她只是随口提到"头像"两个字，就把聊天截图当成了新头像
             const sentAvatarMatch = text.match(/\[LinesImage:\s*([\s\S]+?)\]/);
-            if (sentAvatarMatch && /头像/.test(text)) {
+            if (sentAvatarMatch && userTyped.length <= 30 && /头像/.test(userTyped)) {
                 userSetAvatarThisTurn = true;
                 const rawAv = sentAvatarMatch[1].trim();
                 appendSystemMessage("🖼️ 正在把小千的头像换成你发的这张…");
