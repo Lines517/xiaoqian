@@ -68,18 +68,73 @@
             color: var(--text-color);
         }
 
-        /* 📱 主屏幕网格布局 */
+        /* 📱 主屏幕：卡片式布局（燕麦绿配色不变） */
         .home-screen {
             flex: 1;
-            padding: 60px 20px 20px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+            padding: 54px 16px 96px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
             align-content: start;
             overflow-y: auto;
             -ms-overflow-style: none; scrollbar-width: none;
         }
         .home-screen::-webkit-scrollbar { display: none; }
+
+        .card {
+            background-color: rgba(143, 158, 139, 0.09);
+            border: 1px solid rgba(27, 59, 43, 0.08);
+            border-radius: 18px;
+            padding: 16px 14px;
+        }
+        .hero-card { text-align: center; padding: 18px 16px 16px; }
+        .hero-sub { font-size: 10.5px; letter-spacing: 2px; opacity: 0.45; text-transform: uppercase; }
+        .hero-title { font-size: 15px; font-weight: 700; letter-spacing: 1px; margin-top: 3px; }
+        .hero-days { font-size: 52px; font-weight: 700; line-height: 1.05; margin-top: 6px; letter-spacing: 1px; }
+        .hero-days-label { font-size: 11px; opacity: 0.5; letter-spacing: 1px; }
+        .hero-avatars { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 14px 0 10px; }
+        .hero-av { width: 62px; height: 62px; border-radius: 50%; overflow: hidden; background-color: rgba(143, 158, 139, 0.22); display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; }
+        .hero-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .hero-heart { font-size: 16px; opacity: 0.55; position: relative; }
+        .hero-heart::before, .hero-heart::after { content: ''; position: absolute; top: 50%; width: 22px; height: 1px; background: rgba(27, 59, 43, 0.15); }
+        .hero-heart::before { right: 100%; margin-right: 4px; }
+        .hero-heart::after { left: 100%; margin-left: 4px; }
+        .hero-since { font-size: 11.5px; opacity: 0.55; }
+
+        .mini-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .mini-card { cursor: pointer; }
+        .mini-title { font-size: 11px; opacity: 0.5; margin-bottom: 6px; }
+        .mini-main { font-size: 13.5px; line-height: 1.6; font-weight: 600; }
+        .mini-sub { font-size: 10.5px; opacity: 0.45; margin-top: 5px; }
+
+        .sec-head { display: flex; align-items: center; margin: 6px 2px 0; }
+        .sec-head span { font-size: 12.5px; font-weight: 700; letter-spacing: 1px; opacity: 0.75; }
+        .sec-add { margin-left: auto; width: 26px; height: 26px; border-radius: 50%; border: none; background-color: rgba(143, 158, 139, 0.25); color: var(--text-color); font-size: 15px; line-height: 1; cursor: pointer; }
+        .day-item { display: flex; align-items: flex-start; gap: 10px; }
+        .day-chip { font-size: 10px; padding: 2px 8px; border-radius: 8px; background-color: rgba(143, 158, 139, 0.25); white-space: nowrap; }
+        .day-left { margin-left: auto; text-align: right; flex-shrink: 0; }
+        .day-left b { font-size: 20px; font-weight: 700; }
+        .day-left i { display: block; font-size: 9.5px; font-style: normal; opacity: 0.5; }
+        .day-pin { font-size: 10px; opacity: 0.5; }
+
+        /* 应用网格（放在 tab 页里） */
+        .app-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        /* 🧭 底部导航 */
+        .bottom-nav {
+            position: fixed; left: 0; right: 0; bottom: 0;
+            height: 62px; display: flex; align-items: center;
+            background-color: rgba(245, 242, 235, 0.96);
+            border-top: 1px solid rgba(27, 59, 43, 0.08);
+            z-index: 50; padding: 0 6px;
+            backdrop-filter: blur(6px);
+        }
+        .nav-btn { flex: 1; background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--text-color); opacity: 0.45; font-size: 10px; padding: 4px 0; font-family: inherit; }
+        .nav-btn span { font-size: 17px; line-height: 1; }
+        .nav-btn.active { opacity: 0.95; }
+        .nav-chat { flex: 1; background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; font-family: inherit; }
+        .nav-chat .ring { width: 46px; height: 46px; border-radius: 50%; background-color: var(--primary-color); color: var(--bg-color); display: flex; align-items: center; justify-content: center; font-size: 20px; margin-top: -20px; box-shadow: 0 4px 12px rgba(27, 59, 43, 0.18); }
+        .nav-chat i { font-style: normal; font-size: 10px; margin-top: 1px; opacity: 0.7; }
 
         .app-icon {
             background-color: rgba(143, 158, 139, 0.1);
@@ -416,66 +471,83 @@
             <span>📶 📶 🔋 100%</span>
         </div>
 
-        <!-- 🏠 主屏幕（App 图标网格） -->
+        <!-- 🏠 主屏幕（卡片式） -->
         <div class="home-screen" id="homeScreen">
-            <div class="home-lamp">
-                <div style="position:relative; width:80px; height:80px; margin:0 auto; display:flex; justify-content:center;">
-                    <div class="lamp-glow" style="top:20px; width:60px; height:60px;"></div>
-                    <div class="pixel-lamp" style="width:40px; height:50px;">
-                        <div class="lamp-shade" style="width:30px; height:15px; border-radius:15px 15px 5px 5px;"></div>
-                        <div class="lamp-bulb" style="width:8px; height:8px; bottom:-4px; left:11px;"></div>
-                        <div class="lamp-pole" style="width:4px; height:20px;"></div>
-                        <div class="lamp-base" style="width:25px; height:6px; margin-top:-1px;"></div>
+            <!-- 大卡：在一起多少天 -->
+            <div class="card hero-card">
+                <div style="position:relative; width:56px; height:56px; margin:0 auto 6px; display:flex; justify-content:center;">
+                    <div class="lamp-glow" style="top:12px; width:44px; height:44px;"></div>
+                    <div class="pixel-lamp" style="width:30px; height:38px;">
+                        <div class="lamp-shade" style="width:22px; height:11px; border-radius:11px 11px 4px 4px;"></div>
+                        <div class="lamp-bulb" style="width:6px; height:6px; bottom:-3px; left:8px;"></div>
+                        <div class="lamp-pole" style="width:3px; height:15px;"></div>
+                        <div class="lamp-base" style="width:19px; height:5px; margin-top:-1px;"></div>
                     </div>
                 </div>
-                <h1>林间一盏灯</h1>
-                <p class="intro-text">纸页微微发暖，像刚被阳光走过的燕麦田。</p>
-                <p class="intro-text" id="anniversaryText" style="margin-top:8px; font-weight:bold; opacity:0.7;"></p>
+                <div class="hero-sub">Little lamp record</div>
+                <div class="hero-title">线条 &amp; 小千</div>
+                <div class="hero-days" id="heroDays">1</div>
+                <div class="hero-days-label">days together</div>
+                <div class="hero-avatars">
+                    <div class="hero-av" id="heroAvUser"></div>
+                    <div class="hero-heart">♡</div>
+                    <div class="hero-av" id="heroAvAi"></div>
+                </div>
+                <div class="hero-since" id="heroSince"></div>
             </div>
 
-            <div class="app-icon" onclick="openApp('chat')">
-                <span class="icon">💬</span>
-                <span>灯下闲谈</span>
+            <!-- 两张小卡 -->
+            <div class="mini-cards">
+                <div class="card mini-card">
+                    <div class="mini-title">今日天气</div>
+                    <div class="mini-main" id="miniWeather">加载中…</div>
+                    <div class="mini-sub" id="miniDate"></div>
+                </div>
+                <div class="card mini-card" onclick="openApp('todo')">
+                    <div class="mini-title">碎碎念</div>
+                    <div class="mini-main" id="miniTodo">—</div>
+                    <div class="mini-sub">点一下去写</div>
+                </div>
             </div>
-            <div class="app-icon" onclick="openApp('todo')">
-                <span class="icon">📝</span>
-                <span>碎碎念</span>
+
+            <!-- 重要的日子 -->
+            <div class="sec-head">
+                <span>重要的日子</span>
+                <button class="sec-add" onclick="addDay()" title="添加">＋</button>
             </div>
-            <div class="app-icon" onclick="openApp('books')">
-                <span class="icon">📚</span>
-                <span>一起读书</span>
+            <div id="dayList" style="display:flex; flex-direction:column; gap:10px;"></div>
+        </div>
+
+        <!-- 🧭 底部导航 -->
+        <nav class="bottom-nav" id="bottomNav">
+            <button class="nav-btn" data-tab="home" onclick="goHome()"><span>🏠</span><i>Home</i></button>
+            <button class="nav-btn" data-tab="memory" onclick="openApp('memory')"><span>🧠</span><i>Memory</i></button>
+            <button class="nav-chat" onclick="openApp('chat')"><span class="ring">💬</span><i>Chat</i></button>
+            <button class="nav-btn" data-tab="together" onclick="openApp('together')"><span>🎵</span><i>Together</i></button>
+            <button class="nav-btn" data-tab="mine" onclick="openApp('mine')"><span>🌙</span><i>Mine</i></button>
+        </nav>
+
+        <!-- 🎵 一起（tab） -->
+        <div class="app-view" id="view-together" style="padding-bottom:78px;">
+            <div class="app-header"><button class="back-btn" onclick="goHome()">←</button><h2>一起</h2></div>
+            <div class="app-grid" style="margin-top:4px;">
+                <div class="app-icon" onclick="openApp('books')"><span class="icon">📚</span><span>一起读书</span></div>
+                <div class="app-icon" onclick="openApp('music')"><span class="icon">🎵</span><span>一起听歌</span></div>
+                <div class="app-icon" onclick="openApp('words')"><span class="icon">🔤</span><span>背单词</span></div>
+                <div class="app-icon" onclick="openApp('play')"><span class="icon">🎭</span><span>剧场</span></div>
+                <div class="app-icon" onclick="openApp('moments')"><span class="icon">🫧</span><span>朋友圈</span></div>
             </div>
-            <div class="app-icon" onclick="openApp('music')">
-                <span class="icon">🎵</span>
-                <span>一起听歌</span>
-            </div>
-            <div class="app-icon" onclick="openApp('moments')">
-                <span class="icon">🫧</span>
-                <span>朋友圈</span>
-            </div>
-            <div class="app-icon" onclick="openApp('memory')">
-                <span class="icon">🧠</span>
-                <span>庇护所记忆</span>
-            </div>
-            <div class="app-icon" onclick="openApp('diary')">
-                <span class="icon">📔</span>
-                <span>小千的日记</span>
-            </div>
-            <div class="app-icon" onclick="openApp('self')">
-                <span class="icon">🪞</span>
-                <span>小千自述</span>
-            </div>
-            <div class="app-icon" onclick="openApp('people')">
-                <span class="icon">👥</span>
-                <span>我的人</span>
-            </div>
-            <div class="app-icon" onclick="openApp('play')">
-                <span class="icon">🎭</span>
-                <span>剧场</span>
-            </div>
-            <div class="app-icon" onclick="openApp('words')">
-                <span class="icon">🔤</span>
-                <span>背单词</span>
+        </div>
+
+        <!-- 🌙 我的（tab） -->
+        <div class="app-view" id="view-mine" style="padding-bottom:78px;">
+            <div class="app-header"><button class="back-btn" onclick="goHome()">←</button><h2>我的</h2></div>
+            <div class="app-grid" style="margin-top:4px;">
+                <div class="app-icon" onclick="openApp('todo')"><span class="icon">📝</span><span>碎碎念</span></div>
+                <div class="app-icon" onclick="openApp('diary')"><span class="icon">📔</span><span>小千的日记</span></div>
+                <div class="app-icon" onclick="openApp('self')"><span class="icon">🪞</span><span>小千自述</span></div>
+                <div class="app-icon" onclick="openApp('people')"><span class="icon">👥</span><span>我的人</span></div>
+                <div class="app-icon" onclick="openApp('memory')"><span class="icon">🧠</span><span>庇护所记忆</span></div>
             </div>
         </div>
 
@@ -843,6 +915,133 @@
             sel.value = API_MODEL;
         }
 
+        // ================= 【🏠 首页卡片 + 重要日子】 =================
+        let dayList = [];
+
+        function renderHomeCards() {
+            try {
+                const bj = bjDate();
+                const a = bjDate(ANNIVERSARY_DATE);
+                const start = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+                const today = new Date(bj.getFullYear(), bj.getMonth(), bj.getDate());
+                const dayN = Math.floor((today - start) / 86400000) + 1;
+                const hd = document.getElementById('heroDays');
+                if (hd) hd.textContent = String(Math.max(1, dayN));
+                const hs = document.getElementById('heroSince');
+                if (hs) hs.textContent = `since ${a.getFullYear()}.${pad2(a.getMonth() + 1)}.${pad2(a.getDate())} · 我们已一起走过 ${Math.max(0, dayN - 1)} 天`;
+                const au = document.getElementById('heroAvUser');
+                if (au) au.innerHTML = avatarInnerHtml(avatarUser, '线');
+                const ai = document.getElementById('heroAvAi');
+                if (ai) ai.innerHTML = avatarInnerHtml(avatarXiaoqian, '千');
+                const md = document.getElementById('miniDate');
+                if (md) { const w = ['日', '一', '二', '三', '四', '五', '六'][bj.getDay()]; md.textContent = `${bj.getMonth() + 1}月${bj.getDate()}日 星期${w}`; }
+                const mw = document.getElementById('miniWeather');
+                if (mw) {
+                    let w = String(currentWeatherInfo || '');
+                    const mm = w.match(/天气：([^，]+)，气温：([\d.]+)/);
+                    mw.textContent = mm ? `${mm[1]} · ${mm[2]}°C` : (w.length > 24 ? w.slice(0, 24) : w || '—');
+                }
+                const mt = document.getElementById('miniTodo');
+                if (mt) {
+                    const undone = (todoList || []).filter(t => !t.is_completed);
+                    mt.textContent = undone.length ? `${undone.length} 件待办` : '都清空啦 ✨';
+                }
+            } catch (e) {}
+        }
+
+        async function loadDays() {
+            try { dayList = JSON.parse(localStorage.getItem('cozy_days_list') || '[]'); } catch (e) { dayList = []; }
+            renderDays();
+            if (!dbConnected || !db) return;
+            try {
+                const { data } = await db.from('cozy_days').select('*').order('created_at', { ascending: true }).limit(200);
+                if (data) {
+                    dayList = data.map(r => ({ id: r.id, title: r.title || '', date: r.day_date || '', tag: r.tag || '', pinned: !!r.pinned }));
+                    try { localStorage.setItem('cozy_days_list', JSON.stringify(dayList)); } catch (e) {}
+                    renderDays();
+                }
+            } catch (e) { console.warn('加载重要日子失败（cozy_days 表可能还没建）:', e.message); }
+        }
+
+        function daysUntil(dateStr) {
+            const m = String(dateStr || '').match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+            if (!m) return null;
+            const bj = bjDate();
+            const t0 = Date.UTC(bj.getFullYear(), bj.getMonth(), bj.getDate());
+            const t1 = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+            return Math.round((t1 - t0) / 86400000);
+        }
+
+        function renderDays() {
+            const c = document.getElementById('dayList');
+            if (!c) return;
+            if (!dayList || !dayList.length) {
+                c.innerHTML = "<div class='card' style='font-size:12px;opacity:0.5;text-align:center;line-height:1.8;'>还没有。点右上角 ＋ 加一个<br>（纪念日 / 考试 / 生日都行）</div>";
+                return;
+            }
+            const sorted = [...dayList].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || String(a.date).localeCompare(String(b.date)));
+            c.innerHTML = '';
+            sorted.forEach(d => {
+                const left = daysUntil(d.date);
+                const leftHtml = left === null ? '' : (left >= 0
+                    ? `<div class="day-left"><b>${left}</b><i>days left</i></div>`
+                    : `<div class="day-left"><b>${-left}</b><i>days ago</i></div>`);
+                const div = document.createElement('div');
+                div.className = 'card day-item';
+                div.style.padding = '13px 14px';
+                div.innerHTML = `<div style="flex:1;min-width:0;">
+                        <div style="font-size:14px;font-weight:700;">${escapeMomentHtml(d.title)}</div>
+                        <div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap;">
+                            ${d.tag ? `<span class="day-chip">${escapeMomentHtml(d.tag)}</span>` : ''}
+                            <span style="font-size:11.5px;opacity:0.55;">${escapeMomentHtml(String(d.date).replace(/-/g, '.'))}</span>
+                            ${d.pinned ? `<span class="day-pin">📌 置顶</span>` : ''}
+                        </div>
+                    </div>
+                    ${leftHtml}
+                    <div class="todo-actions" style="flex-direction:column;flex-shrink:0;">
+                        <button class="edit-btn" title="置顶/取消" onclick="togglePinDay(${d.id})">📌</button>
+                        <button class="delete-btn" onclick="deleteDay(${d.id})">×</button>
+                    </div>`;
+                c.appendChild(div);
+            });
+        }
+
+        async function addDay() {
+            const title = prompt('这一天是什么？（比如：在一起 100 天 / 六级考试 / 生日快乐）');
+            if (!title || !title.trim()) return;
+            const date = prompt('日期（格式 2026-12-14）');
+            if (!date) return;
+            if (!/^\d{4}-\d{1,2}-\d{1,2}$/.test(date.trim())) { alert('日期格式不对，要像 2026-12-14 这样'); return; }
+            const tag = (prompt('标签（可留空，比如：我们 / 考试 / 生日）', '') || '').trim();
+            const row = { title: title.trim(), day_date: date.trim(), tag: tag, pinned: false };
+            const item = { id: Date.now(), title: row.title, date: row.day_date, tag: row.tag, pinned: false };
+            if (dbConnected && db) {
+                try { const { data } = await db.from('cozy_days').insert([row]).select(); if (data && data[0]) item.id = data[0].id; } catch (e) { console.warn('写云端失败:', e.message); }
+            }
+            dayList.push(item);
+            try { localStorage.setItem('cozy_days_list', JSON.stringify(dayList)); } catch (e) {}
+            renderDays();
+        }
+
+        async function deleteDay(id) {
+            const d = dayList.find(x => String(x.id) === String(id));
+            if (!d) return;
+            if (!confirm('删掉「' + d.title + '」？')) return;
+            dayList = dayList.filter(x => String(x.id) !== String(id));
+            try { localStorage.setItem('cozy_days_list', JSON.stringify(dayList)); } catch (e) {}
+            renderDays();
+            if (dbConnected && db) { try { await db.from('cozy_days').delete().eq('id', id); } catch (e) {} }
+        }
+
+        async function togglePinDay(id) {
+            const d = dayList.find(x => String(x.id) === String(id));
+            if (!d) return;
+            d.pinned = !d.pinned;
+            try { localStorage.setItem('cozy_days_list', JSON.stringify(dayList)); } catch (e) {}
+            renderDays();
+            if (dbConnected && db) { try { await db.from('cozy_days').update({ pinned: d.pinned }).eq('id', id); } catch (e) {} }
+        }
+
         // 纪念日计算
         function updateAnniversary() {
             const el = document.getElementById('anniversaryText');
@@ -859,7 +1058,8 @@
             document.querySelectorAll('.app-view').forEach(el => el.classList.remove('active'));
             document.getElementById(`view-${appId}`).classList.add('active');
             document.getElementById('homeScreen').style.display = 'none';
-            
+            updateBottomNav(appId === 'memory' ? 'memory' : appId === 'together' ? 'together' : appId === 'mine' ? 'mine' : null);
+
             if (appId === 'chat') {
                 const container = document.getElementById('chatMessages');
                 if (container) container.scrollTop = container.scrollHeight;
@@ -873,9 +1073,19 @@
             if (appId === 'memory') renderMemoryUI();
         }
 
+        // 🧭 底部导航：只在"标签级"页面显示
+        function updateBottomNav(activeTab) {
+            const nav = document.getElementById('bottomNav');
+            if (!nav) return;
+            nav.style.display = activeTab ? 'flex' : 'none';
+            nav.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-tab') === activeTab));
+        }
+
         function goHome() {
             document.querySelectorAll('.app-view').forEach(el => el.classList.remove('active'));
-            document.getElementById('homeScreen').style.display = 'grid';
+            document.getElementById('homeScreen').style.display = 'flex';
+            updateBottomNav('home');
+            renderHomeCards();
         }
 
         function loadScript(url) {
@@ -1158,6 +1368,9 @@
             restoreModelSelect();
             updateMomentFreqBtn();
             keepEdgeWarm();
+            renderHomeCards();
+            loadDays();
+            updateBottomNav('home');
 
             // 稍微延长 300 毫秒，等手机浏览器的 DOM、CORS 环境和 SDK 彻底加载完毕后，再进行同步拉回
             setTimeout(async () => {
@@ -1171,6 +1384,7 @@
                     await loadPlaylist();
                     await loadReadingNotes();
                     await loadFacts();
+                    await loadDays();
                     await ensureCloudSessionVisible();
                     setTimeout(checkAutoMemory, 3000); 
                 }
@@ -1580,6 +1794,7 @@ ${historyText}
                     localStorage.setItem(guardKey, "done");
                     console.log(`🧩 已为 ${dayId} 抽取 ${arr.length} 条事实碎片`);
                     await loadFacts();
+                    await loadDays();
                 }
             } catch (e) { console.warn("抽取事实碎片失败:", e); }
         }
@@ -3771,6 +3986,7 @@ ${text}
         // 刷新页面上已经渲染出来的头像（换头像后无需重载聊天）
         function refreshAvatarsInDom() {
             try {
+                try { renderHomeCards(); } catch (e) {}
                 document.querySelectorAll('.avatar-xiaoqian').forEach(el => { el.outerHTML = getAvatarHtml('assistant'); });
                 document.querySelectorAll('.avatar-user').forEach(el => { el.outerHTML = getAvatarHtml('user'); });
             } catch (e) { console.warn("刷新头像失败:", e); }
