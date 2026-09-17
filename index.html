@@ -3452,8 +3452,10 @@ ${text}
         async function importPlainText(title, text) {
             const chunks = chunkText(text);
             if (!chunks.length) { setDocStatus('没抽到足够的文字'); return; }
-            const n = await saveDocChunks(title || '未命名资料', chunks, null);
-            setDocStatus(`✅ 导入 ${title}：${n} 段`);
+            const t = title || '未命名资料';
+            if (!(await prepareDocTitle(t))) return;
+            const n = await saveDocChunks(t, chunks, null);
+            setDocStatus(`✅ 导入 ${t}：${n} 段`);
         }
 
         async function importPdf(file) {
@@ -3462,6 +3464,7 @@ ${text}
             const buf = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
             const title = file.name.replace(/\.pdf$/i, '');
+            if (!(await prepareDocTitle(title))) { setDocStatus('已取消（保留原来那份）'); return; }
             let total = 0;
             for (let p = 1; p <= pdf.numPages; p++) {
                 const page = await pdf.getPage(p);
@@ -3488,7 +3491,9 @@ ${text}
             ], getVisionModel());
             const chunks = chunkText(text);
             if (!chunks.length) { setDocStatus('这张图里没抽到文字'); return; }
-            const n = await saveDocChunks(file.name.replace(/\.[^.]+$/, ''), chunks, null);
+            const t = file.name.replace(/\.[^.]+$/, '');
+            if (!(await prepareDocTitle(t))) { setDocStatus('已取消（保留原来那份）'); return; }
+            const n = await saveDocChunks(t, chunks, null);
             setDocStatus(`✅ 图片导入完成：${n} 段`);
         }
 
@@ -3522,12 +3527,44 @@ ${text}
         async function loadDocs() {
             if (!dbConnected || !db) return;
             try {
-                const { data } = await db.from('cozy_docs').select('title,page').limit(2000);
+                // 🔁 分页拉全部（Supabase 单次最多 1000 行，不分页会漏）
                 const map = {};
-                (data || []).forEach(r => { map[r.title] = (map[r.title] || 0) + 1; });
-                docsList = Object.keys(map).map(t => ({ title: t, chunks: map[t] }));
+                let from = 0;
+                while (true) {
+                    const { data } = await db.from('cozy_docs').select('title').order('id', { ascending: true }).range(from, from + 999);
+                    if (!data || data.length === 0) break;
+                    data.forEach(r => { map[r.title] = (map[r.title] || 0) + 1; });
+                    if (data.length < 1000) break;
+                    from += 1000;
+                }
+                docsList = Object.keys(map).map(t => ({ title: t, chunks: map[t] })).sort((a, b) => b.chunks - a.chunks);
                 renderDocsUI();
             } catch (e) { console.warn('加载资料失败（cozy_docs 表可能还没建）:', e.message); }
+        }
+
+        // 删掉某一本书的全部段落（分页删，避免 1000 行上限）+ 它的向量
+        async function clearDocsByTitle(title) {
+            if (!dbConnected || !db) return 0;
+            let total = 0;
+            for (let round = 0; round < 200; round++) {
+                const { data } = await db.from('cozy_docs').select('id').eq('title', title).limit(1000);
+                if (!data || !data.length) break;
+                await db.from('cozy_docs').delete().eq('title', title);
+                total += data.length;
+                if (data.length < 1000) break;
+            }
+            try { await db.from('cozy_mem_vec').delete().like('source_key', 'doc:' + title + '#%'); } catch (e) {}
+            return total;
+        }
+
+        // 同一本书重复导入时：问一下要不要替换（不然会越叠越多）
+        async function prepareDocTitle(title) {
+            const existed = (docsList || []).find(d => d.title === title);
+            if (!existed) return true;
+            if (!confirm('《' + title + '》已经导入过了（' + existed.chunks + ' 段）。\n\n要把旧的那份删掉、换成这次上传的吗？\n（点「取消」= 保留旧的，这次不上传）')) return false;
+            setDocStatus('🗑️ 正在删掉旧的《' + title + '》…');
+            await clearDocsByTitle(title);
+            return true;
         }
 
         function renderDocsUI() {
