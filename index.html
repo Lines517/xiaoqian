@@ -2242,6 +2242,9 @@ ${historyText}
                         const rs = String(nowPlaying.like_reason || '').trim();
                         if (rs) att += '，你当时的原话是「' + sanitizeForApi(rs.slice(0, 60)) + '」';
                         dataPrompt += `\n【你们正在一起听】：${sanitizeForApi(nowPlaying.name)}${nowPlaying.artist ? ' — ' + sanitizeForApi(nowPlaying.artist) : ''}${att}（可以就着这首歌自然地聊两句，别硬夸、别像乐评人）`;
+                        // 真歌词（桥从网易云抓的）。只有这里是真词，且只能照抄
+                        const ly = String(nowPlaying.lyric || '').trim();
+                        if (ly) dataPrompt += `\n【这首歌的歌词原文（只有这些是真的，可以照抄引用，别改字别续写）】：\n${sanitizeForApi(ly.slice(0, 400))}`;
                     }
                 }
                 if (readingNotes && readingNotes.length > 0) {
@@ -2284,6 +2287,7 @@ ${historyText}
 Always keep an extremely gentle, mature and equal tone.
 
 【你是谁、对方是谁】：全部以「核心设定」和记忆库为准——上面没有写到的身份细节，不要自行编造；想不起来就诚实地问，或说不知道。
+【歌词铁律】：你**记不住歌词**，所以绝对不准凭印象背歌词、也不准用引号复述歌词——编错她一眼就看出来了。只有当下面【你们正在一起听】里给了「歌词原文」时，你才可以引用，而且**只能照抄，不能改字、不能续写、不能补下一句**。想聊一首歌就聊感觉、聊它让你想到什么，别假装记得词。
 【输出铁律】：**只输出你要说给对方听的话本身**。绝对不要输出思考过程、分析、计划、编号步骤（1. 2. 3.）、英文草稿或"Final Polish"这类字样。第一条字就要是你真正想说的话。
 【分条发送】：如果你想把这段话拆成**几条短消息连着发**（像真人一条条发过来那样），就在两条之间**单独一行**写 [MSG]。不想拆就别写；别拆太碎，一般 2~3 条就好。${memoryPrompt}${factsPrompt}${vecPrompt}${wordPrompt}${dataPrompt}${extraContextPrompt}
 

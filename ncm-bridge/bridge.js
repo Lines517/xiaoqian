@@ -56,10 +56,10 @@ async function sbInsert(row) {
             const j = await r.json().catch(() => null);
             return (Array.isArray(j) && j[0] && j[0].id) || null;
         }
-        // 表里可能还没加 liked / like_reason 两列 → 去掉这两列再写一次
-        if (('liked' in row) || ('like_reason' in row)) {
+        // 表里可能还没加 liked / like_reason / lyric 这几列 → 去掉再写一次
+        if (('liked' in row) || ('like_reason' in row) || ('lyric' in row)) {
             const slim = Object.assign({}, row);
-            delete slim.liked; delete slim.like_reason;
+            delete slim.liked; delete slim.like_reason; delete slim.lyric;
             return await sbInsert(slim);
         }
         const t = await r.text().catch(() => '');
@@ -133,7 +133,7 @@ function parseVerdict(txt) {
 }
 
 const verdicts = new Map();   // "歌名|歌手" -> {liked, why}（同一首不重复问，省钱）
-async function askXiaoqian(name, artist) {
+async function askXiaoqian(name, artist, lyric) {
     const key = String(name) + '|' + String(artist);
     if (verdicts.has(key)) return verdicts.get(key);
 
@@ -148,7 +148,8 @@ async function askXiaoqian(name, artist) {
         'LIKE: YES 或 NO',
         'WHY: 一句话（25 字以内，你的真心话，可以有点自己的脾气）'
     ].join('\n');
-    const user = '现在放的是：《' + (name || '未知') + '》— ' + (artist || '未知歌手');
+    const user = '现在放的是：《' + (name || '未知') + '》— ' + (artist || '未知歌手') +
+        (lyric ? '\n\n（下面是这首歌的真歌词片段，供你参考。没有给你歌词时，你不准自己背词。）\n' + String(lyric).slice(0, 200) : '');
 
     let v = { liked: null, why: '' };
     try {
@@ -184,6 +185,26 @@ async function resolveSongId(name, artist) {
         const hit = j && j.result && j.result.songs && j.result.songs[0];
         return hit ? hit.id : null;
     } catch (e) { return null; }
+}
+
+// ============================================================
+//  抓真歌词（小千记不住词、容易编错，所以直接把真的喂给它）
+// ============================================================
+function cleanLrc(s) {
+    return String(s || '')
+        .split('\n')
+        .map(l => l.replace(/\[\d{1,2}:\d{1,2}([.:]\d{1,3})?\]/g, '').trim())
+        .filter(l => l && !/^(作词|作曲|编曲|制作人|监制|混音|录音|母带|OP|SP|出品|吉他|贝斯|鼓|和声|词|曲)/.test(l))
+        .join('\n');
+}
+
+async function fetchLyric(songId) {
+    if (!songId) return '';
+    try {
+        const j = await ncmGet('/lyric?id=' + songId);
+        const raw = (j && j.lrc && j.lrc.lyric) || '';
+        return cleanLrc(raw).slice(0, 600);
+    } catch (e) { return ''; }
 }
 
 const likedIds = new Set();
@@ -280,14 +301,14 @@ async function addToMyPlaylist(songId, name, artist) {
 }
 
 // 决定要不要点，返回 {liked, why}
-async function decideLike(name, artist) {
+async function decideLike(name, artist, songId, lyric) {
     if (LIKE_MODE === 'off') return { liked: null, why: '' };
-    const id = await resolveSongId(name, artist);
+    const id = songId || await resolveSongId(name, artist);
     if (LIKE_MODE === 'all') {
         await likeIt(id, name, artist);
         return { liked: true, why: '' };
     }
-    const v = await askXiaoqian(name, artist);
+    const v = await askXiaoqian(name, artist, lyric);
     if (v.liked === true) {
         log('  ♥ 小千喜欢这首' + (v.why ? '：' + v.why : '') + ' → 点红心');
         await likeIt(id, name, artist);
@@ -307,8 +328,16 @@ async function handleSong(name, artist) {
     lastHandled = key;
 
     log('🎵 正在放：' + name + ' — ' + artist);
-    const rowId = await sbInsert({ song_id: '', name: name || '', artist: artist || '', is_playing: true, joined: false });
-    const v = await decideLike(name, artist);
+    const songId = await resolveSongId(name, artist);
+    const lyric = await fetchLyric(songId);
+    if (lyric) log('  📜 抓到歌词 ' + lyric.length + ' 字（喂给它的就是真词）');
+    const rowId = await sbInsert({
+        song_id: songId ? String(songId) : '',
+        name: name || '', artist: artist || '',
+        lyric: lyric || '',
+        is_playing: true, joined: false
+    });
+    const v = await decideLike(name, artist, songId, lyric);
     if (v && v.liked !== null) {
         await sbPatch(rowId, { liked: v.liked, like_reason: v.why || '' });
     }
