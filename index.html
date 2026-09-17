@@ -1418,6 +1418,10 @@
             renderHomeCards();
             loadDays();
             updateBottomNav('home');
+            // 🎧 打开就先把"正在听什么"拉回来，并且每 90 秒刷新一次
+            // （以前只在打开"一起听歌"页面时才读，所以在聊天里小千根本不知道你在听什么）
+            loadNowPlaying();
+            setInterval(function () { try { loadNowPlaying(); } catch (e) {} }, 90000);
 
             // 稍微延长 300 毫秒，等手机浏览器的 DOM、CORS 环境和 SDK 彻底加载完毕后，再进行同步拉回
             setTimeout(async () => {
