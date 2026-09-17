@@ -8,6 +8,8 @@
   "supabaseUrl": "https://kejcaijcqlfmtlfxktrk.supabase.co",
   "supabaseKey": "sb_publishable_xa16IttRP-xHQdHSiDNCsA_3dOlQutU",
 
-  "autoLike": true,
-  "announceJoin": true
+  "_点红心": "smart = 问过小千、她真的喜欢才点（推荐）；all = 新歌全点；off = 都不点",
+  "likeMode": "smart",
+  "_判断用模型": "只用来判断'喜不喜欢'，随便换个便宜的也行",
+  "verdictModel": "[企业cli-0.01]gemini-3.5-flash"
 }

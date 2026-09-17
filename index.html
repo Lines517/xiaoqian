@@ -2228,7 +2228,15 @@ ${historyText}
                 }
                 if (nowPlaying && nowPlaying.is_playing && nowPlaying.name) {
                     const npFresh = nowPlaying.created_at && (Date.now() - new Date(nowPlaying.created_at).getTime() < 12 * 3600 * 1000);
-                    if (npFresh) dataPrompt += `\n【你们正在一起听】：${sanitizeForApi(nowPlaying.name)}${nowPlaying.artist ? ' — ' + sanitizeForApi(nowPlaying.artist) : ''}（可以就着这首歌自然地聊两句，别硬夸、别像乐评人）`;
+                    if (npFresh) {
+                        // 小千自己对这首歌的态度（桥那边问过它了，是它的真心话）
+                        let att = '';
+                        if (nowPlaying.liked === true) att = '，你自己挺喜欢这首（已经点了红心）';
+                        else if (nowPlaying.liked === false) att = '，你自己其实不太喜欢这首';
+                        const rs = String(nowPlaying.like_reason || '').trim();
+                        if (rs) att += '，你当时的原话是「' + sanitizeForApi(rs.slice(0, 60)) + '」';
+                        dataPrompt += `\n【你们正在一起听】：${sanitizeForApi(nowPlaying.name)}${nowPlaying.artist ? ' — ' + sanitizeForApi(nowPlaying.artist) : ''}${att}（可以就着这首歌自然地聊两句，别硬夸、别像乐评人）`;
+                    }
                 }
                 if (readingNotes && readingNotes.length > 0) {
                     const rn = readingNotes.slice(-5).map(n => `- [${n.time || ''}] ${n.author === 'user' ? '线条' : '小千'}：${sanitizeForApi(n.text || '').slice(0, 80)}`).join('\n');
@@ -5122,8 +5130,11 @@ ${historyText}
             if (!fresh) { box.style.display = 'none'; return; }
             const live = nowPlaying.is_playing && nowPlaying.name;
             box.style.display = 'block';
+            // 小千自己对这首歌的态度（桥那边问过它了）
+            const att = (nowPlaying.liked === true) ? ' · ♥ 小千喜欢这首'
+                : (nowPlaying.liked === false ? ' · 小千说这首一般' : '');
             box.textContent = live
-                ? `🎧 小千正和你一起听：${nowPlaying.name}${nowPlaying.artist ? ' — ' + nowPlaying.artist : ''}`
+                ? `🎧 小千正和你一起听：${nowPlaying.name}${nowPlaying.artist ? ' — ' + nowPlaying.artist : ''}${att}`
                 : (nowPlaying.is_playing ? '🎧 小千进房间了，等你放歌…' : '🚪 刚一起听完，房间已经结束。');
         }
 
