@@ -175,6 +175,11 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
 
+    // ---------- 分支零：预热（前端定时打一下，让这个函数保持"热"状态，省掉冷启动） ----------
+    if (body.action === "ping") {
+      return jsonOk({ ok: true, t: Date.now() });
+    }
+
     // ---------- 分支一：读取网页 ----------
     if (body.action === "readUrl") {
       if (!body.url) return jsonError("缺少 url 参数");
