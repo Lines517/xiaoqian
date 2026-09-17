@@ -12,6 +12,7 @@ api/.env
 # 网易云一起听桥接（含 cookie，绝不提交）
 ncm-bridge/config.json
 ncm-bridge/listen-state.json
+ncm-bridge/xq-playlist.json
 ncm-bridge/node_modules/
 ncm-bridge/ncm-api/
 

@@ -11,5 +11,9 @@
   "_点红心": "smart = 问过小千、她真的喜欢才点（推荐）；all = 新歌全点；off = 都不点",
   "likeMode": "smart",
   "_判断用模型": "只用来判断'喜不喜欢'，随便换个便宜的也行",
-  "verdictModel": "[企业cli-0.01]gemini-3.5-flash"
+  "verdictModel": "[企业cli-0.01]gemini-3.5-flash",
+
+  "_小千的歌单": "它挑中的歌会收进这个歌单（建在小号上，网页里也能看到）。不想要就 autoPlaylist 设 false",
+  "playlistName": "小千喜欢的",
+  "autoPlaylist": true
 }

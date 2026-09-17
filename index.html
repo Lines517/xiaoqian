@@ -705,6 +705,10 @@
                 <input type="text" id="musicInput" placeholder="网易云链接/ID，或 歌名 - 歌手" autocomplete="off">
                 <button type="button" onclick="addSong()">加入</button>
             </div>
+            <div id="xqLikesWrap" style="display:none; margin-top:14px;">
+                <div style="font-size:12px; opacity:0.6; margin-bottom:6px;">♥ 小千自己的歌单（它从一起听里挑出来的）</div>
+                <div class="playlist" id="xqLikes"></div>
+            </div>
             <div class="playlist" id="playlist"></div>
             <button type="button" class="cyber-btn" style="margin-top:10px;" onclick="xiaoqianTalkSong()">🎧 让小千说说这首歌</button>
             <div class="song-comment" id="songComment"></div>
@@ -5203,6 +5207,7 @@ ${historyText}
                     if (key !== lastMusicMemKey) {
                         lastMusicMemKey = key;
                         if (typeof saveMusicMemoryForDay === 'function') saveMusicMemoryForDay(today, true);
+                        if (typeof loadXiaoqianLikes === 'function') loadXiaoqianLikes();
                     }
                 }
             } catch (e) {}
@@ -5226,6 +5231,7 @@ ${historyText}
         async function loadPlaylist() {
             try { playlist = JSON.parse(localStorage.getItem('cozy_playlist') || '[]'); } catch (e) { playlist = []; }
             renderPlaylist();
+            loadXiaoqianLikes();
             if (!dbConnected || !db) return;
             try {
                 const { data } = await db.from('cozy_playlist').select('*').order('created_at', { ascending: false }).limit(100);
@@ -5245,6 +5251,32 @@ ${historyText}
         }
         function savePlaylist() {
             try { localStorage.setItem('cozy_playlist', JSON.stringify(playlist.slice(0, 50))); } catch (e) {}
+        }
+
+        // ♥ 小千自己从"一起听"里挑出来的歌（她判断喜欢才收）
+        async function loadXiaoqianLikes() {
+            const wrap = document.getElementById('xqLikesWrap'), list = document.getElementById('xqLikes');
+            if (!wrap || !list) return;
+            if (!dbConnected || !db) { wrap.style.display = 'none'; return; }
+            try {
+                const { data } = await db.from('cozy_music')
+                    .select('name,artist,like_reason,created_at')
+                    .eq('liked', true)
+                    .order('created_at', { ascending: false })
+                    .limit(60);
+                const seen = new Set(), items = [];
+                (data || []).forEach(r => {
+                    const k = String(r.name || '').trim();
+                    if (!k || seen.has(k)) return;
+                    seen.add(k); items.push(r);
+                });
+                if (items.length === 0) { wrap.style.display = 'none'; return; }
+                wrap.style.display = 'block';
+                list.innerHTML = items.slice(0, 30).map(r => {
+                    const why = String(r.like_reason || '').trim();
+                    return `<div class="playlist-item" title="${escapeMomentHtml(why)}"><span>${escapeMomentHtml(r.name)}${r.artist ? ' — ' + escapeMomentHtml(r.artist) : ''}</span></div>`;
+                }).join('');
+            } catch (e) { wrap.style.display = 'none'; }
         }
         function renderPlaylist() {
             const list = document.getElementById('playlist');

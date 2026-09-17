@@ -33,6 +33,10 @@ const VERDICT_MODEL = CFG.verdictModel || '[企业cli-0.01]gemini-3.5-flash';
 // 点红心的方式： smart = 问过小千、她真的喜欢才点（默认）
 //               all  = 新歌全点   off = 不点
 const LIKE_MODE = String(CFG.likeMode || (CFG.autoLike === false ? 'off' : 'smart')).toLowerCase();
+// 小千自己的歌单（建在小号上，喜欢一首就往里收）
+const MY_PLAYLIST_NAME = CFG.playlistName || '小千喜欢的';
+const AUTO_PLAYLIST = CFG.autoPlaylist !== false;
+const PLAYLIST_STATE = path.join(__dirname, 'xq-playlist.json');
 
 function ts() { return new Date().toLocaleTimeString('zh-CN', { hour12: false }); }
 function log(...a) { console.log('[' + ts() + ']', ...a); }
@@ -193,6 +197,86 @@ async function likeIt(id, name, artist) {
         if (j && j.code === 200) log('  ♥ 已写进小号「我喜欢的音乐」：' + name + ' — ' + artist);
         else log('  ⚠️ 点红心失败：' + JSON.stringify(j).slice(0, 120));
     } catch (e) { log('  ⚠️ 点红心出错：' + e.message); }
+    // 顺便收进它自己的歌单
+    await addToMyPlaylist(id, name, artist);
+}
+
+// ============================================================
+//  小千自己的歌单（建在小号上）
+// ============================================================
+let myPlaylistId = null;
+let myUid = null;
+
+function loadPlaylistState() {
+    try {
+        const j = JSON.parse(fs.readFileSync(PLAYLIST_STATE, 'utf8'));
+        return (j && j.id) ? j : null;
+    } catch (e) { return null; }
+}
+function savePlaylistState(id, name) {
+    try { fs.writeFileSync(PLAYLIST_STATE, JSON.stringify({ id: id, name: name, updated: new Date().toISOString() }, null, 2), 'utf8'); } catch (e) { }
+}
+
+async function ncmGet(pathAndQuery) {
+    const sep = pathAndQuery.indexOf('?') >= 0 ? '&' : '?';
+    const r = await fetch(NCM_API + pathAndQuery + sep + 'timestamp=' + Date.now(), { headers: HDR_NCM });
+    return await r.json();
+}
+
+async function ensureMyPlaylist() {
+    if (myPlaylistId) return myPlaylistId;
+    // ① 之前建过 → 直接用
+    const saved = loadPlaylistState();
+    if (saved) {
+        myPlaylistId = saved.id;
+        log('🎵 小千的歌单：「' + saved.name + '」（id=' + saved.id + '）');
+        return myPlaylistId;
+    }
+    // ② 在它自己账号的歌单里找同名的
+    try {
+        if (!myUid) {
+            const st = await ncmGet('/login/status');
+            myUid = st && st.data && st.data.profile && st.data.profile.userId;
+        }
+        if (myUid) {
+            const up = await ncmGet('/user/playlist?uid=' + myUid + '&limit=100');
+            const hit = ((up && up.playlist) || []).find(p => p && p.name === MY_PLAYLIST_NAME);
+            if (hit) {
+                myPlaylistId = hit.id;
+                savePlaylistState(hit.id, hit.name);
+                log('🎵 找到小千自己的歌单：「' + hit.name + '」（id=' + hit.id + '）');
+                return myPlaylistId;
+            }
+        }
+    } catch (e) { }
+    // ③ 没有就给它建一个
+    try {
+        const cr = await ncmGet('/playlist/create?name=' + encodeURIComponent(MY_PLAYLIST_NAME));
+        const id = cr && cr.playlist && cr.playlist.id;
+        if (id) {
+            myPlaylistId = id;
+            savePlaylistState(id, MY_PLAYLIST_NAME);
+            log('🎵 给小千建好了它自己的歌单：「' + MY_PLAYLIST_NAME + '」（id=' + id + '）');
+        } else {
+            log('⚠️ 建歌单失败：' + JSON.stringify(cr).slice(0, 140));
+        }
+    } catch (e) { log('⚠️ 建歌单出错：' + e.message); }
+    return myPlaylistId;
+}
+
+const inPlaylist = new Set();
+async function addToMyPlaylist(songId, name, artist) {
+    if (!AUTO_PLAYLIST || !songId) return;
+    if (inPlaylist.has(String(songId))) return;
+    inPlaylist.add(String(songId));
+    const pid = await ensureMyPlaylist();
+    if (!pid) return;
+    try {
+        const j = await ncmGet('/playlist/tracks?op=add&pid=' + pid + '&tracks=' + songId);
+        const ok = j && (j.status === 200 || j.code === 200);
+        if (ok) log('  🎵 也收进它自己的歌单了：' + name + ' — ' + artist);
+        else log('  ⚠️ 收进歌单失败：' + JSON.stringify(j).slice(0, 140));
+    } catch (e) { log('  ⚠️ 收进歌单出错：' + e.message); }
 }
 
 // 决定要不要点，返回 {liked, why}
@@ -268,8 +352,10 @@ try {
         const r = await fetch(NCM_API + '/login/status?timestamp=' + Date.now(), { headers: HDR_NCM });
         const j = await r.json();
         const prof = j && j.data && j.data.profile;
-        if (prof) log('✅ 网易云 API 正常，小号已登录：' + (prof.nickname || prof.userId));
-        else log('⚠️ 网易云 API 通了，但 cookie 可能没登录成功（返回 ' + JSON.stringify(j).slice(0, 120) + '）');
+        if (prof) {
+            myUid = prof.userId;
+            log('✅ 网易云 API 正常，小号已登录：' + (prof.nickname || prof.userId));
+        } else log('⚠️ 网易云 API 通了，但 cookie 可能没登录成功（返回 ' + JSON.stringify(j).slice(0, 120) + '）');
     } catch (e) {
         log('❌ 连不上本机的网易云 API（' + NCM_API + '）');
         log('   先双击「启动网易云API.bat」把它跑起来，再运行这个。');
@@ -278,6 +364,7 @@ try {
 
     const modeText = { smart: '问过小千，她喜欢才点', all: '新歌全点', off: '不点' }[LIKE_MODE] || LIKE_MODE;
     log('♥ 红心方式：' + modeText);
+    if (AUTO_PLAYLIST) await ensureMyPlaylist();
 
     lt.arm(true);
     lt.start();
