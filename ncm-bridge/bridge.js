@@ -29,7 +29,9 @@ const HDR_SB = {
     'Content-Type': 'application/json'
 };
 // 让小千判断"喜不喜欢"时用的模型（随便换，能用就行）
-const VERDICT_MODEL = CFG.verdictModel || '[企业cli-0.01]gemini-3.5-flash';
+// ⚠️ 供应商会突然下架模型（返回 200 + {"error":"model_not_found"}），所以备一条兜底链
+const VERDICT_MODELS = [CFG.verdictModel || '[奶油-官混-0.02]gemini-3.7-flash']
+    .concat(CFG.verdictFallbacks || ['[反重力-0.02]gemini-3.5-flash', '[个人kiro-0.24]claude-opus-4-6']);
 // 点红心的方式： smart = 问过小千、她真的喜欢才点（默认）
 //               all  = 新歌全点   off = 不点
 const LIKE_MODE = String(CFG.likeMode || (CFG.autoLike === false ? 'off' : 'smart')).toLowerCase();
@@ -156,18 +158,30 @@ async function askXiaoqian(name, artist, lyric) {
         (lyric ? '\n\n（下面是这首歌的真歌词片段，供你参考。没有给你歌词时，你不准自己背词。）\n' + String(lyric).slice(0, 200) : '');
 
     let v = { liked: null, why: '' };
-    try {
-        const r = await fetch(EDGE_FN_URL, {
-            method: 'POST',
-            headers: HDR_SB,
-            body: JSON.stringify({
-                model: VERDICT_MODEL,
-                messages: [{ role: 'system', content: sys }, { role: 'user', content: user }]
-            })
-        });
-        const raw = await r.text();
-        v = parseVerdict(sseToText(raw));
-    } catch (e) { log('⚠️ 问小千"喜不喜欢"时出错：' + e.message); }
+    let lastErr = '';
+    for (const modelName of VERDICT_MODELS) {
+        try {
+            const r = await fetch(EDGE_FN_URL, {
+                method: 'POST',
+                headers: HDR_SB,
+                body: JSON.stringify({
+                    model: modelName,
+                    messages: [{ role: 'system', content: sys }, { role: 'user', content: user }]
+                })
+            });
+            const raw = await r.text();
+            // 供应商出错时返回的是 200 + {"error":...}，先认出来
+            if (/"error"\s*:/.test(raw) && !/LIKE\s*[:：]/.test(raw)) {
+                lastErr = raw.replace(/\s+/g, ' ').slice(0, 200);
+                continue;
+            }
+            const parsed = parseVerdict(sseToText(raw));
+            if (parsed.liked !== null) { v = parsed; lastErr = ''; break; }
+            v = parsed;
+            lastErr = '它这次没按两行格式回答';
+        } catch (e) { lastErr = e.message; }
+    }
+    if (v.liked === null && lastErr) log('  ⚠️ 判断失败：' + lastErr);
     verdicts.set(key, v);
     return v;
 }

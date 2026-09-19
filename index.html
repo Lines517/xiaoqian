@@ -561,16 +561,15 @@
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
                     <select id="modelSelect" onchange="switchModel(this.value)" style="flex:1; min-width:0; font-size:11px; padding:3px 4px; border-radius:8px; border:1px solid rgba(27,59,43,0.15); background:transparent; color:var(--text-color); outline:none;">
+                        <option value="[奶油-官混-0.02]gemini-3.7-flash">[奶油-官混-0.02]gemini-3.7-flash ⚡</option>
+                        <option value="[反重力-0.02]gemini-3.5-flash">[反重力-0.02]gemini-3.5-flash</option>
+                        <option value="[反重力-0.025]gemini-3.8-flash">[反重力-0.025]gemini-3.8-flash</option>
+                        <option value="[反重力-0.02]gemini-3.6-flash">[反重力-0.02]gemini-3.6-flash</option>
                         <option value="[反重力-0.02]gemini-3.7-flash">[反重力-0.02]gemini-3.7-flash</option>
-                        <option value="[反重力-0.025]gemini-2.5-pro">[反重力-0.025]gemini-2.5-pro</option>
-                        <option value="[奶油-官混-0.02]gemini-3-flash-preview">[奶油-官混-0.02]gemini-3-flash-preview</option>
                         <option value="[芋泥-anti-0.01]gemini-3-flash-preview">[芋泥-anti-0.01]gemini-3-flash-preview</option>
-                        <option value="[芋泥-anti-0.01]gemini-2.5-flash">[芋泥-anti-0.01]gemini-2.5-flash</option>
-                        <option value="[企业cli-0.01]gemini-3-flash-preview">[企业cli-0.01]gemini-3-flash-preview</option>
-                        <option value="[奶油-官混-0.02]gemini-3.8-flash">[奶油-官混-0.02]gemini-3.8-flash</option>
-                        <option value="gpt-5.5">gpt-5.5</option>
-                        <option value="[企业cli-0.01]gemini-3.5-flash">[企业cli-0.01]gemini-3.5-flash</option>
-                        <option value="[企业cli-0.04]gemini-3-pro-preview">[企业cli-0.04]gemini-3-pro-preview</option>
+                        <option value="[个人kiro-0.24]claude-opus-4-6">[个人kiro-0.24]claude-opus-4-6</option>
+                        <option value="[栗子-官逆-0.022]grok-4.2">[栗子-官逆-0.022]grok-4.2</option>
+                        <option value="[栗子-官逆-0.022]gpt-5.5">[栗子-官逆-0.022]gpt-5.5</option>
                     </select>
                     <button type="button" onclick="forceCloudSync()" title="同步" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔄</button>
                     <button type="button" id="ttsToggleBtn" onclick="toggleTTS()" title="让小千读出来" style="font-size:15px; background:none; border:none; cursor:pointer; opacity:0.7; padding:0 4px;">🔇</button>
@@ -841,8 +840,15 @@
         const API_KEY = ""; 
         // 默认模型。MODEL_DEFAULT_VERSION 变化时，会把本机之前存的旧选择作废一次，
         // 让新的默认真正生效（之后你在下拉里选的会照常记住）。
-        const MODEL_DEFAULT_VERSION = 2;
-        const MODEL_DEFAULT_NAME = "[企业cli-0.01]gemini-3.5-flash";
+        const MODEL_DEFAULT_VERSION = 3;
+        const MODEL_DEFAULT_NAME = "[奶油-官混-0.02]gemini-3.7-flash";
+        // 供应商哪天又把模型下架了，就自动往下面这几个换（按速度排序）
+        const MODEL_FALLBACKS = [
+            "[奶油-官混-0.02]gemini-3.7-flash",
+            "[反重力-0.02]gemini-3.5-flash",
+            "[个人kiro-0.24]claude-opus-4-6",
+            "[栗子-官逆-0.022]gpt-5.5"
+        ];
         let API_MODEL = (function () {
             try {
                 const v = parseInt(localStorage.getItem('cozy_model_default_version') || '0', 10);
@@ -1212,23 +1218,41 @@
         }
 
         // 统一的流式请求：优先走 Supabase Edge Function（若已配置），否则直连模型接口
+        // ⚠️ 供应商（舒芙蕾）会突然把某个模型改名/下架，而且返回的是 200 + {"error":...}，
+        //    所以这里备了一条兜底链：哪个能跑就用哪个，避免整个页面哑掉。
         async function openModelStream(completeMessages, modelOverride) {
-            const payload = { model: modelOverride || API_MODEL, messages: completeMessages, stream: true };
+            const wanted = modelOverride || API_MODEL;
+            const chain = [wanted].concat(MODEL_FALLBACKS.filter(m => m !== wanted));
+            let lastErr = '';
             if (EDGE_FN_URL) {
-                try {
-                    const r = await fetch(EDGE_FN_URL, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_KEY}`, "apikey": SUPABASE_KEY },
-                        body: JSON.stringify(payload)
-                    });
-                    if (r.ok && r.body) return r;
-                    console.warn("Edge Function 非 200，改用直连");
-                } catch (e) { console.warn("Edge Function 不可用，改用直连:", e.message); }
+                for (const modelName of chain) {
+                    try {
+                        const r = await fetch(EDGE_FN_URL, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_KEY}`, "apikey": SUPABASE_KEY },
+                            body: JSON.stringify({ model: modelName, messages: completeMessages, stream: true })
+                        });
+                        const ct = (r.headers.get("content-type") || "").toLowerCase();
+                        // 正常的流是 text/event-stream；如果回来的是 json，说明是错误包
+                        if (r.ok && ct.indexOf("application/json") === -1) {
+                            if (modelName !== wanted) console.warn("已自动改用备用模型：" + modelName);
+                            return r;
+                        }
+                        let msg = "HTTP " + r.status;
+                        try { const j = await r.json(); msg = (j.error && (j.error.message || j.error)) || msg; } catch (e) {}
+                        lastErr = String(msg);
+                        console.warn("模型不可用（" + modelName + "）：" + lastErr.slice(0, 120));
+                    } catch (e) {
+                        lastErr = e.message;
+                        console.warn("调用失败（" + modelName + "）：" + e.message);
+                    }
+                }
             }
+            if (lastErr && !API_KEY) throw new Error("模型都暂时不可用：" + lastErr.slice(0, 160));
             return await fetch(API_URL, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY}` },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({ model: wanted, messages: completeMessages, stream: true })
             });
         }
 
@@ -5876,7 +5900,7 @@ ${recent ? '最近的对话片段：\n' + recent + '\n' : ''}请写一条简短�
         }
 
         // ---- ⚙️ 设置：识图专用模型 ----
-        const VISION_MODEL_DEFAULT = "[企业cli-0.04]gemini-3-pro-preview";
+        const VISION_MODEL_DEFAULT = "[奶油-官混-0.02]gemini-3.7-flash";
         function getVisionModelRaw() {
             try { const v = localStorage.getItem('cozy_vision_model'); if (v) return v; } catch (e) {}
             return VISION_MODEL_DEFAULT;
