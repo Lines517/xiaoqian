@@ -1779,8 +1779,7 @@ ${historyText}
             // 🔒 先校验：新记忆必须有效，否则【保留旧记忆不动】——绝不先删后写
             const valid = (Array.isArray(arr) ? arr : []).filter(t => t && typeof t.memory === 'string' && t.memory.trim().length >= 4);
             if (valid.length === 0) { console.warn('抽取到的记忆为空/无效，已保留原有记忆不动'); return 0; }
-            if (dbConnected && db) { try { await db.from('cozy_memories').delete().eq('memory_date', dayId); } catch (e) {} }
-            memoryDb = (memoryDb || []).filter(m => memoryItemDate(m) !== dayId);
+            await deleteChatMemoriesForDay(dayId);
             let n = 0;
             for (const t of valid) {
                 const obj = { date: dayId, folder: `${dayId} 手记 · ${t.topic || '记忆'}`, memory: t.memory, emotion: t.emotion || '', state: t.state || '温柔陪伴' };
@@ -2875,6 +2874,25 @@ Always keep an extremely gentle, mature and equal tone.
             return d || '未知日期';
         }
 
+        // 🛡️ 删除"某天由聊天抽取出来的记忆"。
+        //    ⚠️ 以前这里是 delete().eq('memory_date', dayId) —— 把那天**所有**记忆都删了，
+        //    于是「一起听」「剧场」「背单词」「教材」这些专题记忆会被顺手清掉。
+        //    现在只删 folder 以当天日期开头的（也就是 `${dayId} 手记 · 话题` 这类）。
+        async function deleteChatMemoriesForDay(dayId) {
+            const isChatLocal = (m) => {
+                const fd = String(m.folder || '');
+                if (fd) return fd.indexOf(dayId) === 0;
+                return memoryItemDate(m) === dayId;   // 老数据没有 folder，退回按日期判断
+            };
+            memoryDb = (memoryDb || []).filter(m => !isChatLocal(m));
+            if (!dbConnected || !db) return;
+            try {
+                const { data } = await db.from('cozy_memories').select('id,folder').eq('memory_date', dayId).limit(1000);
+                const ids = (data || []).filter(r => String(r.folder || '').indexOf(dayId) === 0).map(r => r.id);
+                if (ids.length) await db.from('cozy_memories').delete().in('id', ids);
+            } catch (e) { console.warn('清理当天旧记忆失败:', e.message); }
+        }
+
         // 把某一天的多条记忆，按"话题"重新组织成若干条独立记忆（保留多条、去掉重复）
         async function organizeMemoriesForDay(dateStr, silent) {
             if (dateStr === '核心设定' || dateStr === '小千自述') { if (!silent) alert("「核心设定 / 小千自述」是你和我的身份，不会被自动整理～"); return 0; }
@@ -2912,8 +2930,7 @@ ${texts.map((t, i) => `【${i + 1}】${t}`).join('\n\n')}`;
                 const validArr = arr.filter(t => t && typeof t.memory === 'string' && t.memory.trim().length >= 4);
                 if (validArr.length === 0) throw new Error("整理结果无效（模型返回异常），已保留原记忆");
 
-                if (dbConnected && db) { try { await db.from('cozy_memories').delete().eq('memory_date', dateStr); } catch (e) {} }
-                memoryDb = (memoryDb || []).filter(m => memoryItemDate(m) !== dateStr);
+                await deleteChatMemoriesForDay(dateStr);
                 let added = 0;
                 for (const t of validArr) {
                     if (!t || !t.memory) continue;
