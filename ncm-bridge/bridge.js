@@ -330,13 +330,38 @@ async function addToMyPlaylist(songId, name, artist) {
 //  云端表 cozy_music_self，这里轮询到就去搜歌、加进它自己的歌单。
 // ============================================================
 async function searchSong(keyword) {
+    // 支持 "歌名 - 歌手" 的写法：先按歌名搜一批，再挑歌手对得上的那条
+    // （否则会搜到同名翻唱/别人的版本，加错歌）
+    let title = String(keyword || '').trim();
+    let wantArtist = '';
+    const m = title.match(/^(.*?)\s*[-—–]\s*(.+)$/);
+    if (m) { title = m[1].trim(); wantArtist = m[2].trim(); }
+    if (!title) return null;
+    const norm = (s) => String(s || '').replace(/[\s　·・]/g, '').toLowerCase();
+    const pick = (s) => ({ id: s.id, name: s.name, artist: (s.artists || s.ar || []).map(a => a.name).join('/') });
+    const artistsOf = (s) => (s.artists || s.ar || []).map(a => a.name);
     try {
-        const r = await fetch(NCM_API + '/search?keywords=' + encodeURIComponent(keyword) + '&limit=1&timestamp=' + Date.now(), { headers: HDR_NCM });
+        const r = await fetch(NCM_API + '/search?keywords=' + encodeURIComponent(title) + '&limit=10&timestamp=' + Date.now(), { headers: HDR_NCM });
         const j = await r.json();
-        const hit = j && j.result && j.result.songs && j.result.songs[0];
-        if (!hit) return null;
-        const artists = (hit.artists || hit.ar || []).map(a => a.name).join('/');
-        return { id: hit.id, name: hit.name, artist: artists };
+        const list = (j && j.result && j.result.songs) || [];
+        if (list.length === 0) return null;
+
+        const t = norm(title);
+        const nameOk = (s) => { const n = norm(s.name); return !!n && (n.includes(t) || t.includes(n)); };
+        const w = wantArtist ? norm(wantArtist) : '';
+        const artistOk = (s) => !w || artistsOf(s).some(a => { const n = norm(a); return n && (n.includes(w) || w.includes(n)); });
+
+        // ① 歌名 + 歌手都对得上（最理想）
+        let hit = list.find(s => nameOk(s) && artistOk(s));
+        // ② 起码歌名对得上
+        if (!hit) hit = list.find(nameOk);
+        if (hit) {
+            if (w && !artistOk(hit)) log('  ⚠️ 网易云没有「' + wantArtist + '」的版本，用了同名的：' + pick(hit).artist);
+            return pick(hit);
+        }
+        // ③ 歌名都对不上 → 宁可说找不到，也别乱加一首
+        log('  ⚠️ 搜不到对得上的歌：' + keyword);
+        return null;
     } catch (e) { return null; }
 }
 

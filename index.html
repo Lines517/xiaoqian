@@ -1060,17 +1060,6 @@
             if (dbConnected && db) { try { await db.from('cozy_days').update({ pinned: d.pinned }).eq('id', id); } catch (e) {} }
         }
 
-        // 纪念日计算
-        function updateAnniversary() {
-            const el = document.getElementById('anniversaryText');
-            if (!el) return;
-            const now = bjDate();
-            const diff = Math.floor((now.getTime() - ANNIVERSARY_DATE.getTime()) / (24 * 60 * 60 * 1000));
-            if (diff >= 0) {
-                el.innerText = `和小千在一起的第 ${diff + 1} 天`;
-            }
-        }
-
         // 导航切换逻辑
         function openApp(appId) {
             document.querySelectorAll('.app-view').forEach(el => el.classList.remove('active'));
@@ -1441,7 +1430,6 @@
             loadReadingNotes();
             fetchWeather(); 
             requestNotificationPermission();
-            updateAnniversary();
             restoreModelSelect();
             updateMomentFreqBtn();
             keepEdgeWarm();
@@ -4403,7 +4391,6 @@ ${text}
 
         function appendSystemMessage(text) { const container = document.getElementById('chatMessages'); const div = document.createElement('div'); div.style.cssText = "font-size:11px; opacity:0.4; text-align:center; margin:8px 0;"; div.innerText = text; container.appendChild(div); }
         function clearCurrentChat() { if (confirm("确定要清空今天的聊天框吗？（历史记录和云端记录不会被删除）")) { allChatMessages = allChatMessages.filter(msg => msg.session_id !== currentSessionId); saveChats(); loadLocalChats(); renderDateTabs(); } }
-        function toggleArchive() { const content = document.getElementById('archiveContent'); const arrow = document.getElementById('archiveArrow'); if (content.style.display === 'none' || content.style.display === '') { content.style.display = 'flex'; arrow.innerText = "折叠 ▲"; } else { content.style.display = 'none'; arrow.innerText = "展开 ▼"; } }
 
         // ================= 【7. 微信同款历史聊天记录搜寻引擎】 =================
         function toggleSearchClearBtn(val) {
